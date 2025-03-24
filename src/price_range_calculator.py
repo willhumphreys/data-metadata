@@ -1,128 +1,166 @@
+#!/usr/bin/env python3
+
 import pandas as pd
+import argparse
+import sys
 from datetime import timedelta
 
 
-def calculate_max_range(
-        dataframe,
-        time_window_hours=8,
-        datetime_column='dateTime',
-        high_column='high',
-        low_column='low'
-):
+def calculate_max_range(df, time_window_hours):
     """
-    Calculate the maximum range between high and low prices within a specified time window.
+    Calculate the maximum price range within a given time window.
 
     Args:
-        dataframe (pd.DataFrame): DataFrame containing the price data
-        time_window_hours (int): Maximum time window in hours to consider for the range calculation
-        datetime_column (str): Name of the column containing the datetime information
-        high_column (str): Name of the column containing the high prices
-        low_column (str): Name of the column containing the low prices
+        df (pandas.DataFrame): DataFrame containing price data with datetime index
+                              and 'high' and 'low' columns.
+        time_window_hours (int): The time window in hours.
 
     Returns:
         dict: A dictionary containing:
-            - max_range: The maximum price range found
-            - start_time: The start time of the maximum range
-            - end_time: The end time of the maximum range
-            - start_price: The price at the start of the range
-            - end_price: The price at the end of the range
+            - max_range: The maximum price range
+            - start_time: The start time of the window with maximum range
+            - end_time: The end time of the window with maximum range
+            - high_price: The highest price in the window
+            - low_price: The lowest price in the window
     """
-    # Ensure datetime column is in datetime format
-    df = dataframe.copy()
-    if not pd.api.types.is_datetime64_any_dtype(df[datetime_column]):
-        df[datetime_column] = pd.to_datetime(df[datetime_column])
+    if df.empty:
+        print("Error: DataFrame is empty")
+        return None
 
-    # Sort by datetime to ensure correct window calculation
-    df = df.sort_values(by=datetime_column)
+    # Check if required columns exist
+    required_columns = ['high', 'low']
+    for col in required_columns:
+        if col not in df.columns:
+            print(f"Error: Required column '{col}' not found in data")
+            return None
+
+    # Ensure DataFrame is sorted by time
+    df = df.sort_index()
 
     max_range = 0
-    max_range_data = {
+    result = {
         'max_range': 0,
         'start_time': None,
         'end_time': None,
-        'high_price': None,
-        'low_price': None
+        'high_price': 0,
+        'low_price': 0
     }
 
-    # Convert time_window_hours to timedelta
-    time_window = timedelta(hours=time_window_hours)
+    # Calculate the time delta for our window
+    time_delta = timedelta(hours=time_window_hours)
 
-    # Iterate through each row as a potential starting point
-    for i, start_row in df.iterrows():
-        start_time = start_row[datetime_column]
-        end_time = start_time + time_window
+    # Iterate through each timestamp as a potential starting point
+    for i in range(len(df)):
+        start_time = df.index[i]
+        end_time = start_time + time_delta
 
-        # Get all prices within the time window
-        window_data = df[(df[datetime_column] >= start_time) &
-                         (df[datetime_column] <= end_time)]
+        # Get all rows within our time window
+        window = df.loc[start_time:end_time]
 
-        if not window_data.empty:
-            # Find the maximum high and minimum low in the window
-            window_max_high = window_data[high_column].max()
-            window_min_low = window_data[low_column].min()
+        # Skip if window is too short (could be at the end of the dataset)
+        if len(window) <= 1:
+            continue
 
-            # Calculate the range
-            range_value = window_max_high - window_min_low
+        # Check that the window doesn't exceed our time limit
+        actual_duration = window.index[-1] - window.index[0]
+        if actual_duration > time_delta:
+            continue
 
-            # Update max range if this window has a larger range
-            if range_value > max_range:
-                max_range = range_value
-                max_range_data = {
-                    'max_range': range_value,
-                    'start_time': start_time,
-                    'end_time': window_data[datetime_column].max(),
-                    'high_price': window_max_high,
-                    'low_price': window_min_low
-                }
+        # Find highest and lowest prices in this window
+        highest = window['high'].max()
+        lowest = window['low'].min()
 
-    return max_range_data
+        # Calculate range
+        price_range = highest - lowest
 
-
-def load_price_data(file_path):
-    """
-    Load price data from CSV file.
-
-    Args:
-        file_path (str): Path to the CSV file
-
-    Returns:
-        pd.DataFrame: DataFrame containing the price data
-    """
-    df = pd.read_csv(file_path)
-    return df
-
-
-def main(file_path, time_window_hours=8):
-    """
-    Main function to calculate the maximum price range.
-
-    Args:
-        file_path (str): Path to the CSV file containing price data
-        time_window_hours (int): Maximum time window in hours to consider for the range calculation
-
-    Returns:
-        dict: Result of the max range calculation
-    """
-    df = load_price_data(file_path)
-    result = calculate_max_range(df, time_window_hours)
-
-    print(f"Maximum price range within {time_window_hours} hours: {result['max_range']}")
-    print(f"Start time: {result['start_time']}")
-    print(f"End time: {result['end_time']}")
-    print(f"High price: {result['high_price']}")
-    print(f"Low price: {result['low_price']}")
+        # Update if this range is greater than the max seen so far
+        if price_range > max_range:
+            max_range = price_range
+            result = {
+                'max_range': max_range,
+                'start_time': window.index[0],
+                'end_time': window.index[-1],
+                'high_price': highest,
+                'low_price': lowest
+            }
 
     return result
 
 
+def load_price_data(file_path):
+    """
+    Load and preprocess price data from CSV file.
+
+    Args:
+        file_path (str): Path to the CSV file containing price data.
+
+    Returns:
+        pandas.DataFrame: Preprocessed DataFrame with datetime index and price columns.
+    """
+    try:
+        # Load the data
+        df = pd.read_csv(file_path)
+
+        # Check if required columns exist
+        required_columns = ['timestamp', 'high', 'low']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+
+        if missing_columns:
+            print(f"Error: Missing required columns: {', '.join(missing_columns)}")
+            return pd.DataFrame()
+
+        # Convert timestamp from milliseconds to datetime
+        df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
+
+        # Set datetime as the index
+        df = df.set_index('datetime')
+
+        # Convert price columns to integers (scale by multiplying by 100)
+        price_columns = ['open', 'high', 'low', 'close', 'vwap']
+        for col in price_columns:
+            if col in df.columns:
+                # Multiply by 100 and round to nearest integer
+                df[col] = (df[col] * 100).round().astype(int)
+
+        # Sort by datetime
+        df = df.sort_index()
+
+        print(f"Loaded {len(df)} rows of price data")
+        return df
+
+    except Exception as e:
+        print(f"Error loading price data: {str(e)}")
+        return pd.DataFrame()
+
+
+def main():
+    """
+    Parse command line arguments and execute the price range calculation.
+    """
+    parser = argparse.ArgumentParser(description='Calculate maximum price range within a time window.')
+    parser.add_argument('file_path', help='Path to the CSV file containing price data')
+    parser.add_argument('--time-window', type=int, default=8,
+                        help='Time window in hours for price range calculation')
+
+    args = parser.parse_args()
+
+    # Load the price data
+    df = load_price_data(args.file_path)
+
+    if df.empty:
+        sys.exit("Error: No data available for analysis")
+
+    # Calculate max price range
+    result = calculate_max_range(df, args.time_window)
+
+    if result:
+        print("\n===== Results =====")
+        print(f"Maximum price range within {args.time_window} hours: {result['max_range']}")
+        print(f"  Start time: {result['start_time']}")
+        print(f"  End time: {result['end_time']}")
+        print(f"  High price: {result['high_price']}")
+        print(f"  Low price: {result['low_price']}")
+
+
 if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) < 2:
-        print("Usage: python price_range_calculator.py <file_path> [time_window_hours]")
-        sys.exit(1)
-
-    file_path = sys.argv[1]
-    time_window_hours = int(sys.argv[2]) if len(sys.argv) > 2 else 8
-
-    main(file_path, time_window_hours)
+    main()

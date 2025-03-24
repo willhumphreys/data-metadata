@@ -20,7 +20,7 @@ def upload_file_to_s3(file_path, bucket, key, region=None):
     """
     # Get the region from environment if not provided
     if region is None:
-        region = os.environ.get('S3_REGION', 'us-east-1')
+        region = os.environ.get('AWS_REGION', 'us-east-1')
 
     # Create S3 client
     s3_client = boto3.client('s3', region_name=region)
@@ -42,34 +42,53 @@ def upload_file_to_s3(file_path, bucket, key, region=None):
 
 def upload_trader_config(config_file_path, ticker=None, date_str=None):
     """
-    Upload trader configuration file to S3 based on environment variables
-    
+    Upload trader configuration file to S3 using environment variables for configuration
+
     Args:
-        config_file_path (str): Path to the trader config JSON file
-        ticker (str, optional): Stock ticker symbol
-        date_str (str, optional): Date string in YYYY-MM-DD format
-        
+        config_file_path (str): Path to the trader configuration JSON file
+        ticker (str, optional): Ticker symbol to use in the S3 key
+        date_str (str, optional): Date string to use in the S3 key
+
     Returns:
         tuple: (bool, str) - Success status and the S3 key where the file was uploaded
     """
-    # Get S3 configuration from environment variables
+    # Get S3 settings from environment variables
     s3_upload_bucket = os.environ.get('S3_UPLOAD_BUCKET')
     s3_upload_key_prefix = os.environ.get('S3_UPLOAD_KEY_PREFIX', 'trader-configs')
-    s3_region = os.environ.get('S3_REGION')
+    s3_region = os.environ.get('AWS_REGION')
 
+    # Return early if no bucket specified
     if not s3_upload_bucket:
         print("S3_UPLOAD_BUCKET environment variable not set. Skipping upload.")
         return False, None
 
+    # Use provided values or get from environment or use defaults
+    ticker = ticker or os.environ.get('TICKER', 'unknown')
+
     # Generate timestamp
     timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
 
-    # Use provided ticker and date or get from environment variables, otherwise use defaults
-    ticker = ticker or os.environ.get('TICKER', 'unknown')
+    # Use provided date or extract from timestamp
     date_str = date_str or os.environ.get('DATE_STR', timestamp.split('-')[0])
 
     # Create key with format: prefix/ticker/date/trader_config_timestamp.json
-    s3_key = f"{s3_upload_key_prefix}/{ticker}/{date_str}/trader_config_{timestamp}.json"
+    filename = os.path.basename(config_file_path)
+    s3_key = f"{s3_upload_key_prefix}/{ticker}/{date_str}/{filename.split('.')[0]}_{timestamp}.json"
+
+    # Upload the file
+    success = upload_file_to_s3(config_file_path, s3_upload_bucket, s3_key, s3_region)
+
+    return success, s3_key if success else None
+
+
+
+
+    # Use provided ticker and date or get from environment variables, otherwise use defaults
+    ticker = ticker or os.environ.get('TICKER', 'unknown')
+
+
+    # Create key with format: prefix/ticker/date/trader_config_timestamp.json
+    s3_key = f"{s3_upload_key_prefix}/{ticker}/trader_config_.json"
 
     # Upload the file
     success = upload_file_to_s3(config_file_path, s3_upload_bucket, s3_key, s3_region)
