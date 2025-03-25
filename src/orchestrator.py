@@ -78,7 +78,7 @@ def pipeline(
 
     # Step 2: Calculate maximum price ranges
     print(f"\n[2/2] Calculating maximum price ranges...")
-    df = load_price_data(file_path)
+    df = load_price_data(file_path, ticker)
 
     if df.empty:
         print(f"Error: No valid price data loaded for {ticker}")
@@ -108,7 +108,7 @@ def pipeline(
 
     # Generate trader configurations if we have both 8-hour and 14-day results
     if "8_hours" in results and "336_hours" in results:
-        trader_config = generate_trader_configs(results["8_hours"], results["336_hours"], target_combinations)
+        trader_config = generate_trader_configs(results["8_hours"], results["336_hours"], ticker, target_combinations)
 
         # Add trader configurations to results
         results['trader_config'] = trader_config
@@ -149,7 +149,7 @@ def numpy_encoder(obj):
         return obj
 
 
-def generate_trader_configs(eight_hour_results, fourteen_day_results, target_combinations=100000,
+def generate_trader_configs(eight_hour_results, fourteen_day_results, ticker, target_combinations=100000,
                             output_file="trader_config.json"):
     """
     Generate trader configuration strings based on price range analysis results and save to JSON file.
@@ -162,6 +162,11 @@ def generate_trader_configs(eight_hour_results, fourteen_day_results, target_com
 
     Returns:
         dict: Trader configuration details
+        :param output_file:
+        :param eight_hour_results:
+        :param fourteen_day_results:
+        :param target_combinations:
+        :param ticker:
     """
     # Extract the price ranges - convert numpy types to native Python types if needed
     short_term_range = int(numpy_encoder(eight_hour_results['max_range']))  # 1750
@@ -271,7 +276,7 @@ def generate_trader_configs(eight_hour_results, fourteen_day_results, target_com
     print(f"Trader configuration saved to {os.path.abspath(output_file)}")
 
     # Upload to S3 if environment variables are set
-    success, s3_key = upload_trader_config(output_file, os.environ.get('TICKER'))
+    success, s3_key = upload_trader_config(output_file, ticker)
 
     if success:
         # Add S3 information to the result
@@ -282,49 +287,6 @@ def generate_trader_configs(eight_hour_results, fourteen_day_results, target_com
         }
 
     return result
-
-
-
-
-# Example usage remains the same
-
-
-# Example usage:
-if __name__ == "__main__":
-    eight_hour_results = {
-        'max_range': 1750,
-        'start_time': '2024-08-05 08:00:00',
-        'end_time': '2024-08-05 16:00:00',
-        'high_price': 21350,
-        'low_price': 19600
-    }
-
-    fourteen_day_results = {
-        'max_range': 3561,
-        'start_time': '2025-02-27 19:00:00',
-        'end_time': '2025-03-13 19:00:00',
-        'high_price': 24403,
-        'low_price': 20842
-    }
-
-    # Generate and save configuration
-    trader_config = generate_trader_configs(
-        eight_hour_results,
-        fourteen_day_results,
-        target_combinations=100000,
-        output_file="optimal_trader_config.json"
-    )
-
-    # Print summary
-    print("\n===== Trader Configuration Summary =====")
-    # print(f"Config string: {trader_config['config_string']}")
-    print(f"Total combinations: {trader_config['total_combinations']}")
-    print("\nParameter ranges:")
-    for param, values in trader_config['parameters'].items():
-        if 'count' in values:
-            print(
-                f"  {param.capitalize()}: {values['min']} to {values['max']} in steps of {values['step']} ({values['count']} values)")
-
 
 
 def main():

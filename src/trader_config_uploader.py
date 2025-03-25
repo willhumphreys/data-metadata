@@ -62,9 +62,6 @@ def upload_trader_config(config_file_path, ticker=None, date_str=None):
         print("S3_UPLOAD_BUCKET environment variable not set. Skipping upload.")
         return False, None
 
-    # Use provided values or get from environment or use defaults
-    ticker = ticker or os.environ.get('TICKER', 'unknown')
-
     # Generate timestamp
     timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
 
@@ -73,7 +70,7 @@ def upload_trader_config(config_file_path, ticker=None, date_str=None):
 
     # Create key with format: prefix/ticker/date/trader_config_timestamp.json
     filename = os.path.basename(config_file_path)
-    s3_key = f"{s3_upload_key_prefix}/{ticker}/{date_str}/{filename.split('.')[0]}_{timestamp}.json"
+    s3_key = f"{ticker}.json"
 
     # Upload the file
     success = upload_file_to_s3(config_file_path, s3_upload_bucket, s3_key, s3_region)
