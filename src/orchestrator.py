@@ -34,7 +34,7 @@ def pipeline(
         ticker='AAPL',
         s3_key_path=DEFAULT_S3_KEY_PATH,
         output_dir=DEFAULT_OUTPUT_DIR,
-        time_window_hours=[8, 336],  # Default: 8 hours and 14 days (336 hours)
+        time_window_hours=None,  # Default: 8 hours and 14 days (336 hours)
         date=None,
         clean_output=True,
         target_combinations=100000  # Target number of trader combinations
@@ -55,6 +55,10 @@ def pipeline(
         dict: Results including price range analysis and trader configurations
     """
     # Initialize results dict
+
+    if time_window_hours is None:
+        time_window_hours = [8, 336]
+
     results = {}
 
     if clean_output:
@@ -78,7 +82,7 @@ def pipeline(
 
     # Step 2: Calculate maximum price ranges
     print(f"\n[2/2] Calculating maximum price ranges...")
-    df = load_price_data(file_path, ticker)
+    df = load_price_data(file_path)
 
     if df.empty:
         print(f"Error: No valid price data loaded for {ticker}")
