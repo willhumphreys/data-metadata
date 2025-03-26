@@ -343,14 +343,14 @@ def put_trade_job_on_queue(aggregate_job_name, base_symbol, batch_client, full_s
                                            jobQueue=queue_name, jobDefinition="mochi-trades", containerOverrides={
             "command": ["-scenario", full_scenario, "-output_dir", "results", "-upload_to_s3", "-aggregate",
                         "-s3_key_min", s3_key_min],
-            'environment': [{'name': 'MOCHI_DATA_BUCKET', 'value': os.environ.get('PREPARED_BUCKET_NAME')},
-                            {'name': 'MOCHI_TRADES_BUCKET', 'value': os.environ.get('TRADES_BUCKET_NAME')},
-                            {'name': 'MOCHI_TRADERS_BUCKET', 'value': os.environ.get('TRADER_BUCKET_NAME')},
+            'environment': [{'name': 'MOCHI_DATA_BUCKET', 'value': os.environ.get('MOCHI_DATA_BUCKET')},
+                            {'name': 'MOCHI_TRADES_BUCKET', 'value': os.environ.get('MOCHI_TRADES_BUCKET')},
+                            {'name': 'MOCHI_TRADERS_BUCKET', 'value': os.environ.get('MOCHI_TRADERS_BUCKET')},
                             {'name': 'MOCHI_AGGREGATION_BUCKET', 'value': os.environ.get('MOCHI_AGGREGATION_BUCKET')},
                             {'name': 'MOCHI_AGGREGATION_BUCKET_STAGING',
                              'value': os.environ.get('MOCHI_AGGREGATION_BUCKET_STAGING')},
-                            {'name': 'S3_TICKER-META_BUCKET', 'value': os.environ.get('MOCHI_PROD_TICKER_META')},
-                            {'name': 'AWS_REGION', 'value': 'eu-central-1'}
+                            {'name': 'S3_TICKER-META_BUCKET', 'value': os.environ.get('S3_UPLOAD_BUCKET')},
+                            {'name': 'AWS_REGION', 'value': os.environ.get('AWS_REGION')}
 
                             ]}, tags={"Scenario": full_scenario, "Symbol": symbol_file, "SubmissionGroupTag": group_tag,
                                       "TradeType": trade_type, "TaskType": "aggregation"})
@@ -392,7 +392,7 @@ def put_trade_job_on_queue(aggregate_job_name, base_symbol, batch_client, full_s
                                                      dependsOn=[{'jobId': best_traders_job_id}], containerOverrides={
             "command": ["--symbol", symbol_with_provider, "--scenario", scenario],
             'environment': [{'name': 'MOCHI_GRAPHS_BUCKET', 'value': os.environ.get('MOCHI_GRAPHS_BUCKET')},
-                            {'name': 'MOCHI_TRADES_BUCKET', 'value': os.environ.get('TRADES_BUCKET_NAME')},
+                            {'name': 'MOCHI_TRADES_BUCKET', 'value': os.environ.get('MOCHI_TRADES_BUCKET')},
                             {'name': 'MOCHI_PROD_TRADE_EXTRACTS', 'value': os.environ.get('MOCHI_PROD_TRADE_EXTRACTS')}
 
                             ]}, tags={"Scenario": scenario, "Symbol": base_symbol,
