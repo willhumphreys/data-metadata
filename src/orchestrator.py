@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
-import shutil
 import argparse
+import shutil
 from datetime import datetime, timedelta
 
+import boto3
+
+from price_range_calculator import calculate_max_range, load_price_data
 # Import functions from our other modules
 from s3_downloader import download_from_s3, DEFAULT_S3_KEY_PATH, DEFAULT_OUTPUT_DIR
-from price_range_calculator import calculate_max_range, load_price_data
 from src.trader_config_uploader import upload_trader_config
 
 
@@ -29,16 +31,8 @@ def clean_directory(directory):
         os.makedirs(directory)
 
 
-
-def pipeline(
-        ticker='AAPL',
-        s3_key_path=DEFAULT_S3_KEY_PATH,
-        output_dir=DEFAULT_OUTPUT_DIR,
-        time_window_hours=None,  # Default: 8 hours and 14 days (336 hours)
-        date=None,
-        clean_output=True,
-        target_combinations=100000  # Target number of trader combinations
-):
+def pipeline(ticker='AAPL', s3_key_path=DEFAULT_S3_KEY_PATH, output_dir=DEFAULT_OUTPUT_DIR, time_window_hours=None,
+             date=None, clean_output=True, target_combinations=100000, group_tag='NotSet', s3_key_min=None):
     """
     Execute the full data pipeline: download from S3, analyze price ranges, generate trader configs.
 
@@ -53,6 +47,8 @@ def pipeline(
 
     Returns:
         dict: Results including price range analysis and trader configurations
+        :param s3_key_min:
+        :param group_tag:
     """
     # Initialize results dict
 
@@ -112,7 +108,7 @@ def pipeline(
 
     # Generate trader configurations if we have both 8-hour and 14-day results
     if "8_hours" in results and "336_hours" in results:
-        trader_config = generate_trader_configs(results["8_hours"], results["336_hours"], ticker, target_combinations)
+        trader_config = generate_trader_configs(results["8_hours"], results["336_hours"], ticker, s3_key_min, target_combinations, group_tag=group_tag)
 
         # Add trader configurations to results
         results['trader_config'] = trader_config
@@ -153,8 +149,8 @@ def numpy_encoder(obj):
         return obj
 
 
-def generate_trader_configs(eight_hour_results, fourteen_day_results, ticker, target_combinations=100000,
-                            output_file="trader_config.json"):
+def generate_trader_configs(eight_hour_results, fourteen_day_results, ticker, s3_key_min, target_combinations=100000,
+                            output_file="trader_config.json", group_tag="NotSet"):
     """
     Generate trader configuration strings based on price range analysis results and save to JSON file.
 
@@ -166,6 +162,8 @@ def generate_trader_configs(eight_hour_results, fourteen_day_results, ticker, ta
 
     Returns:
         dict: Trader configuration details
+        :param s3_key_min:
+        :param group_tag:
         :param output_file:
         :param eight_hour_results:
         :param fourteen_day_results:
@@ -233,34 +231,18 @@ def generate_trader_configs(eight_hour_results, fourteen_day_results, ticker, ta
         total_combinations = num_stops * num_limits * num_offsets * num_durations * num_outputs
 
     # Generate the configuration string
-    scenario = f"s_{stop_min}..{stop_max}..{stop_step}___" + \
-                    f"l_{limit_min}..{limit_max}..{limit_step}___" + \
-                    f"o_{offset_min}..{offset_max}..{offset_step}___" + \
-                    f"d_{duration_min}..{duration_max}..{duration_step}___" + \
-                    f"out_{output_min}..{output_max}..{output_step}"
+    scenario = f"s_{stop_min}..{stop_max}..{stop_step}___" + f"l_{limit_min}..{limit_max}..{limit_step}___" + f"o_{offset_min}..{offset_max}..{offset_step}___" + f"d_{duration_min}..{duration_max}..{duration_step}___" + f"out_{output_min}..{output_max}..{output_step}"
 
     # Create result dictionary
-    result = {
-        'scenario': scenario,
-        'total_combinations': total_combinations,
-        'parameters': {
-            'stops': {'min': stop_min, 'max': stop_max, 'step': stop_step, 'count': num_stops},
+    result = {'scenario': scenario, 'total_combinations': total_combinations,
+        'parameters': {'stops': {'min': stop_min, 'max': stop_max, 'step': stop_step, 'count': num_stops},
             'limits': {'min': limit_min, 'max': limit_max, 'step': limit_step, 'count': num_limits},
             'offsets': {'min': offset_min, 'max': offset_max, 'step': offset_step, 'count': num_offsets},
             'durations': {'min': duration_min, 'max': duration_max, 'step': duration_step, 'count': num_durations},
-            'outputs': {'min': output_min, 'max': output_max, 'step': output_step, 'count': num_outputs}
-        },
-        'price_analysis': {
-            'short_term': {
-                'max_range': short_term_range,
-                'window_hours': 8
-            },
-            'long_term': {
-                'max_range': long_term_range,
-                'window_hours': 336  # 14 days
-            }
-        }
-    }
+            'outputs': {'min': output_min, 'max': output_max, 'step': output_step, 'count': num_outputs}},
+        'price_analysis': {'short_term': {'max_range': short_term_range, 'window_hours': 8},
+            'long_term': {'max_range': long_term_range, 'window_hours': 336  # 14 days
+            }}}
 
     # Process the entire dictionary to ensure all values are JSON serializable
     def convert_dict_values(d):
@@ -282,15 +264,154 @@ def generate_trader_configs(eight_hour_results, fourteen_day_results, ticker, ta
     # Upload to S3 if environment variables are set
     success, s3_key = upload_trader_config(output_file, ticker)
 
+    # Format ticker for scenario
+    symbol_file = f"{ticker}-1mF.csv"
+    base_symbol = ticker
+
+    # Build the full scenario string
+    full_scenario = f"{scenario}___{symbol_file}"
+
+    # Determine trade type
+    trade_type = "long"  # Default to long since our scenario doesn't have "short"
+
+    # Generate job names
+    trades_job_name = f"Trades{ticker}-{group_tag}"
+    aggregate_job_name = f"Aggregate{ticker}-{group_tag}"
+    graphs_job_name = f"Graphs{ticker}-"
+
+    print(f"Submitting job with name: {trades_job_name} with scenario: {full_scenario}")
+
+    # Submit the trades job (dependent on trade-data-enhancer-job)
+    metadata_key = ticker + ".json"
+
+    # Common job queue
+    queue_name = "fargateSpotTrades"
+    print(f"Using queue: {queue_name}")
+
+    # Initialize boto3 client
+    batch_client = boto3.client('batch')
+
+    put_trade_job_on_queue(aggregate_job_name, base_symbol, batch_client, full_scenario,
+                           graphs_job_name, group_tag, metadata_key, queue_name, s3_key_min,
+                           scenario, symbol_file, ticker, trade_type, trades_job_name)
+
     if success:
         # Add S3 information to the result
-        result['s3_info'] = {
-            'uploaded': True,
-            'bucket': os.environ.get('S3_UPLOAD_BUCKET'),
-            'key': s3_key
-        }
+        result['s3_info'] = {'uploaded': True, 'bucket': os.environ.get('S3_UPLOAD_BUCKET'), 'key': s3_key}
 
     return result
+
+
+def put_trade_job_on_queue(aggregate_job_name, base_symbol, batch_client, full_scenario,
+                           graphs_job_name, group_tag, metadata_key, queue_name, s3_key_min,
+                           scenario, symbol_file, ticker, trade_type, trades_job_name):
+    trades_response = batch_client.submit_job(jobName=trades_job_name, jobQueue=queue_name,
+                                              jobDefinition="mochi-trades", dependsOn=[],
+                                              containerOverrides={
+                                                  "command": ["-scenario", full_scenario, "-output_dir", "results",
+                                                      "-write_trades", "-upload_to_s3", "-s3_key_min", s3_key_min], 'environment': [
+                                                      {'name': 'MOCHI_DATA_BUCKET',
+                                                       'value': os.environ.get('PREPARED_BUCKET_NAME')},
+                                                      {'name': 'MOCHI_TRADES_BUCKET',
+                                                          'value': os.environ.get('TRADES_BUCKET_NAME')},
+                                                      {'name': 'MOCHI_TRADERS_BUCKET',
+                                                          'value': os.environ.get('TRADER_BUCKET_NAME')},
+                                                      {'name': 'S3_TICKER-META_BUCKET',
+                                                          'value': os.environ.get('MOCHI_PROD_TICKER_META')},
+                                                      {'name': 'AWS_REGION', 'value': 'eu-central-1'}, ]},
+                                              tags={"Scenario": full_scenario, "Symbol": symbol_file,
+                                                    "SubmissionGroupTag": group_tag, "TradeType": trade_type,
+                                                    "TaskType": "trade"})
+    trades_job_id = trades_response['jobId']
+    print(f"Submitted trades job with ID: {trades_job_id}")
+    # Submit aggregation job
+    print(f"Submitting aggregation job with name: {aggregate_job_name} with scenario: {full_scenario}")
+    agg_response = batch_client.submit_job(jobName=aggregate_job_name, dependsOn=[{'jobId': trades_job_id}],
+                                           jobQueue=queue_name, jobDefinition="mochi-trades", containerOverrides={
+            "command": ["-scenario", full_scenario, "-output_dir", "results", "-upload_to_s3", "-aggregate",
+                        "-s3_key_min", s3_key_min],
+            'environment': [{'name': 'MOCHI_DATA_BUCKET', 'value': os.environ.get('PREPARED_BUCKET_NAME')},
+                            {'name': 'MOCHI_TRADES_BUCKET', 'value': os.environ.get('TRADES_BUCKET_NAME')},
+                            {'name': 'MOCHI_TRADERS_BUCKET', 'value': os.environ.get('TRADER_BUCKET_NAME')},
+                            {'name': 'MOCHI_AGGREGATION_BUCKET', 'value': os.environ.get('MOCHI_AGGREGATION_BUCKET')},
+                            {'name': 'MOCHI_AGGREGATION_BUCKET_STAGING',
+                             'value': os.environ.get('MOCHI_AGGREGATION_BUCKET_STAGING')},
+                            {'name': 'S3_TICKER-META_BUCKET', 'value': os.environ.get('MOCHI_PROD_TICKER_META')},
+                            {'name': 'AWS_REGION', 'value': 'eu-central-1'}
+
+                            ]}, tags={"Scenario": full_scenario, "Symbol": symbol_file, "SubmissionGroupTag": group_tag,
+                                      "TradeType": trade_type, "TaskType": "aggregation"})
+    agg_job_id = agg_response['jobId']
+    print(f"Submitted aggregation job with ID: {agg_job_id}")
+    # Submit graph jobs
+    best_traders_job_id = None
+    for script in ["years.r", "stops.r", "bestTraders.r"]:
+        job_name = f"{graphs_job_name}{script.split('.')[0]}-{group_tag}"
+        just_scenario = full_scenario.rsplit('___', 1)[0]
+        scenario_value = f"{base_symbol}_polygon_min/{just_scenario}/aggregated-{base_symbol}_polygon_min_{just_scenario}_aggregationQueryTemplate-all.csv.lzo"
+        symbol_with_provider = f"{base_symbol}_polygon_min"
+
+        print(f"Submitting graph job with name: {job_name} with scenario: {scenario_value}")
+        graph_response = batch_client.submit_job(jobName=job_name, dependsOn=[{'jobId': agg_job_id}],
+                                                 jobQueue=queue_name, jobDefinition="r-graphs",
+                                                 containerOverrides={"command": [scenario_value, script],
+                                                                     'environment': [
+                                                                         {'name': 'MOCHI_AGGREGATION_BUCKET',
+                                                                          'value': os.environ.get(
+                                                                              'MOCHI_AGGREGATION_BUCKET')},
+                                                                         {'name': 'MOCHI_GRAPHS_BUCKET',
+                                                                          'value': os.environ.get(
+                                                                              'MOCHI_GRAPHS_BUCKET')}
+
+                                                                     ]},
+                                                 tags={"Scenario": just_scenario, "Symbol": base_symbol,
+                                                       "SubmissionGroupTag": group_tag, "TradeType": trade_type,
+                                                       "TaskType": "graph"})
+
+        if script == "bestTraders.r":
+            best_traders_job_id = graph_response['jobId']
+            print(f"Submitted bestTraders.r graph job with ID: {best_traders_job_id}")
+    # Submit trade-extract job
+    trade_extract_job_name = f"trade-extract-{base_symbol}-{group_tag}"
+    print(f"Submitting trade-extract job with name: {trade_extract_job_name}")
+    trade_extract_response = batch_client.submit_job(jobName=trade_extract_job_name, jobQueue=queue_name,
+                                                     jobDefinition="trade-extract",
+                                                     dependsOn=[{'jobId': best_traders_job_id}], containerOverrides={
+            "command": ["--symbol", symbol_with_provider, "--scenario", scenario],
+            'environment': [{'name': 'MOCHI_GRAPHS_BUCKET', 'value': os.environ.get('MOCHI_GRAPHS_BUCKET')},
+                            {'name': 'MOCHI_TRADES_BUCKET', 'value': os.environ.get('TRADES_BUCKET_NAME')},
+                            {'name': 'MOCHI_PROD_TRADE_EXTRACTS', 'value': os.environ.get('MOCHI_PROD_TRADE_EXTRACTS')}
+
+                            ]}, tags={"Scenario": scenario, "Symbol": base_symbol,
+                                      "SubmissionGroupTag": group_tag, "TaskType": "trade-extract"})
+    trade_extract_job_id = trade_extract_response['jobId']
+    print(f"Submitted trade-extract job with ID: {trade_extract_job_id}")
+    # Submit py-trade-lens job
+    py_trade_lens_job_name = f"py-trade-lens-{base_symbol}-{group_tag}"
+    print(f"Submitting py-trade-lens job with name: {py_trade_lens_job_name}")
+    py_trade_lens_response = batch_client.submit_job(jobName=py_trade_lens_job_name, jobQueue=queue_name,
+                                                     jobDefinition="py-trade-lens",
+                                                     dependsOn=[{'jobId': trade_extract_job_id}], containerOverrides={
+            "command": ["--symbol", symbol_with_provider, "--scenario", scenario]},
+                                                     tags={"Scenario": scenario, "Symbol": base_symbol,
+                                                           "SubmissionGroupTag": group_tag,
+                                                           "TaskType": "py-trade-lens"})
+    py_trade_lens_job_id = py_trade_lens_response['jobId']
+    print(f"Submitted py-trade-lens job with ID: {py_trade_lens_job_id}")
+    # Submit trade-summary job
+    trade_summary_job_name = f"trade_summary-{base_symbol}-{group_tag}"
+    print(f"Submitting trade-summary job with name: {trade_summary_job_name}")
+    trade_summary_response = batch_client.submit_job(jobName=trade_summary_job_name, jobQueue=queue_name,
+                                                     jobDefinition="trade-summary",
+                                                     dependsOn=[{'jobId': py_trade_lens_job_id}],
+                                                     containerOverrides={"command": ["--symbol", symbol_with_provider]},
+                                                     tags={"Symbol": base_symbol, "SubmissionGroupTag": group_tag,
+                                                           "TaskType": "trade_summary"})
+    print(f"Submitted trade-summary job with ID: {trade_summary_response['jobId']}")
+    # Return the results
+    return {'statusCode': 200, 'body': json.dumps(
+        {'message': f'Successfully submitted job chain for {ticker}',
+         'tradesJobId': trades_job_id, 'groupTag': group_tag})}
 
 
 def main():
@@ -302,26 +423,24 @@ def main():
     parser.add_argument('--date', type=str, help='Date to analyze (YYYY-MM-DD), defaults to yesterday')
     parser.add_argument('--time-windows', type=str, default="8,336",
                         help='Comma-separated list of time windows in hours (default: 8,336)')
-    parser.add_argument('--s3-path', type=str, default=DEFAULT_S3_KEY_PATH, help='S3 key path template')
+    parser.add_argument('--s3-path', type=str, default=DEFAULT_S3_KEY_PATH, help='S3 key hour path template')
+    parser.add_argument('--s3_key_min', type=str, help='S3 key minute path template')
     parser.add_argument('--output-dir', type=str, default=DEFAULT_OUTPUT_DIR, help='Output directory')
     parser.add_argument('--no-clean', action='store_true', help='Do not clean output directory before starting')
+    parser.add_argument('--group_tag', type=str, default='NotSet', help='The group tag to use for this run')
+
 
     args = parser.parse_args()
 
     # Parse the time windows from the comma-separated string
     time_windows = [int(hours.strip()) for hours in args.time_windows.split(',')]
 
-    result = pipeline(
-        ticker=args.ticker,
-        s3_key_path=args.s3_path,
-        output_dir=args.output_dir,
-        time_window_hours=time_windows,
-        date=args.date,
-        clean_output=not args.no_clean
-    )
+    result = pipeline(ticker=args.ticker, s3_key_path=args.s3_path, output_dir=args.output_dir,
+                      time_window_hours=time_windows, date=args.date, clean_output=not args.no_clean,
+                      group_tag=args.group_tag, s3_key_min=args.s3_key_min)
 
     return result
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     main()
