@@ -329,7 +329,7 @@ def put_trade_job_on_queue(aggregate_job_name, base_symbol, batch_client, full_s
                                                       {'name': 'MOCHI_TRADERS_BUCKET',
                                                           'value': os.environ.get('MOCHI_TRADERS_BUCKET')},
                                                       {'name': 'S3_TICKER-META_BUCKET',
-                                                          'value': os.environ.get('MOCHI_PROD_TICKER_META')},
+                                                          'value': os.environ.get('S3_UPLOAD_BUCKET')},
                                                       {'name': 'AWS_REGION', 'value': os.environ.get('AWS_REGION')},
                                                   ]},
                                               tags={"Scenario": full_scenario, "Symbol": symbol_file,
