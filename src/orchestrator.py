@@ -312,20 +312,26 @@ def generate_trader_configs(eight_hour_results, fourteen_day_results, ticker, s3
 def put_trade_job_on_queue(aggregate_job_name, base_symbol, batch_client, full_scenario,
                            graphs_job_name, group_tag, queue_name, s3_key_min,
                            scenario, symbol_file, ticker, trade_type, trades_job_name):
+
+
+
     trades_response = batch_client.submit_job(jobName=trades_job_name, jobQueue=queue_name,
                                               jobDefinition="mochi-trades", dependsOn=[],
                                               containerOverrides={
-                                                  "command": ["-scenario", full_scenario, "-output_dir", "results",
-                                                      "-write_trades", "-upload_to_s3", "-s3_key_min", s3_key_min], 'environment': [
+                                                  "command": [
+                                                      "-scenario", full_scenario, "-output_dir", "results",
+                                                      "-write_trades", "-upload_to_s3", "-s3_key_min", s3_key_min],
+                                                  'environment': [
                                                       {'name': 'MOCHI_DATA_BUCKET',
-                                                       'value': os.environ.get('PREPARED_BUCKET_NAME')},
+                                                       'value': os.environ.get('MOCHI_DATA_BUCKET')},
                                                       {'name': 'MOCHI_TRADES_BUCKET',
-                                                          'value': os.environ.get('TRADES_BUCKET_NAME')},
+                                                          'value': os.environ.get('MOCHI_TRADES_BUCKET')},
                                                       {'name': 'MOCHI_TRADERS_BUCKET',
-                                                          'value': os.environ.get('TRADER_BUCKET_NAME')},
+                                                          'value': os.environ.get('MOCHI_TRADERS_BUCKET')},
                                                       {'name': 'S3_TICKER-META_BUCKET',
                                                           'value': os.environ.get('MOCHI_PROD_TICKER_META')},
-                                                      {'name': 'AWS_REGION', 'value': 'eu-central-1'}, ]},
+                                                      {'name': 'AWS_REGION', 'value': os.environ.get('AWS_REGION')},
+                                                  ]},
                                               tags={"Scenario": full_scenario, "Symbol": symbol_file,
                                                     "SubmissionGroupTag": group_tag, "TradeType": trade_type,
                                                     "TaskType": "trade"})
