@@ -31,8 +31,8 @@ def clean_directory(directory):
         os.makedirs(directory)
 
 
-def pipeline(ticker='AAPL', s3_key_path=DEFAULT_S3_KEY_PATH, output_dir=DEFAULT_OUTPUT_DIR, time_window_hours=None,
-             date=None, clean_output=True, target_combinations=100000, group_tag='NotSet', s3_key_min=None):
+def pipeline(ticker=None, s3_key_path=DEFAULT_S3_KEY_PATH, output_dir=DEFAULT_OUTPUT_DIR, time_window_hours=None,
+             date=None, clean_output=True, target_combinations=100000, group_tag=None, s3_key_min=None):
     """
     Execute the full data pipeline: download from S3, analyze price ranges, generate trader configs.
 
@@ -47,6 +47,13 @@ def pipeline(ticker='AAPL', s3_key_path=DEFAULT_S3_KEY_PATH, output_dir=DEFAULT_
 
     Returns:
         dict: Results including price range analysis and trader configurations
+        :param time_window_hours:
+        :param output_dir:
+        :param s3_key_path:
+        :param ticker:
+        :param date:
+        :param clean_output:
+        :param target_combinations:
         :param s3_key_min:
         :param group_tag:
     """
@@ -292,7 +299,7 @@ def generate_trader_configs(eight_hour_results, fourteen_day_results, ticker, s3
     batch_client = boto3.client('batch')
 
     put_trade_job_on_queue(aggregate_job_name, base_symbol, batch_client, full_scenario,
-                           graphs_job_name, group_tag, metadata_key, queue_name, s3_key_min,
+                           graphs_job_name, group_tag, queue_name, s3_key_min,
                            scenario, symbol_file, ticker, trade_type, trades_job_name)
 
     if success:
@@ -303,7 +310,7 @@ def generate_trader_configs(eight_hour_results, fourteen_day_results, ticker, s3
 
 
 def put_trade_job_on_queue(aggregate_job_name, base_symbol, batch_client, full_scenario,
-                           graphs_job_name, group_tag, metadata_key, queue_name, s3_key_min,
+                           graphs_job_name, group_tag, queue_name, s3_key_min,
                            scenario, symbol_file, ticker, trade_type, trades_job_name):
     trades_response = batch_client.submit_job(jobName=trades_job_name, jobQueue=queue_name,
                                               jobDefinition="mochi-trades", dependsOn=[],
