@@ -157,7 +157,7 @@ def numpy_encoder(obj):
 
 
 def generate_trader_configs(eight_hour_results, fourteen_day_results, ticker, s3_key_min, target_combinations=100000,
-                            output_file="trader_config.json", group_tag="NotSet"):
+                            output_file="trader_config.json", group_tag=None):
     """
     Generate trader configuration strings based on price range analysis results and save to JSON file.
 
@@ -295,10 +295,7 @@ def generate_trader_configs(eight_hour_results, fourteen_day_results, ticker, s3
     aggregate_job_name_short = f"Aggregate{ticker}-{group_tag}-short"
     graphs_job_name_short = f"Graphs{ticker}-short-"
 
-    print(f"Submitting job with name: {trades_job_name} with scenario: {full_scenario}")
-
-    # Submit the trades job (dependent on trade-data-enhancer-job)
-    metadata_key = ticker + ".json"
+    print(f"Submitting job with name: {trades_job_name} with scenario: {full_scenario} and {full_scenario_short}")
 
     # Common job queue
     queue_name = "fargateSpotTrades"
