@@ -278,6 +278,11 @@ def generate_trader_configs(eight_hour_results, fourteen_day_results, ticker, s3
     # Build the full scenario string
     full_scenario = f"{scenario}___{symbol_file}"
 
+    scenario_short = f"{scenario}___short"
+
+    # Build the full scenario string
+    full_scenario_short = f"{scenario_short}___{symbol_file}"
+
     # Determine trade type
     trade_type = "long"  # Default to long since our scenario doesn't have "short"
 
@@ -285,6 +290,10 @@ def generate_trader_configs(eight_hour_results, fourteen_day_results, ticker, s3
     trades_job_name = f"Trades{ticker}-{group_tag}"
     aggregate_job_name = f"Aggregate{ticker}-{group_tag}"
     graphs_job_name = f"Graphs{ticker}-"
+
+    trades_job_name_short = f"Trades{ticker}-{group_tag}-short"
+    aggregate_job_name_short = f"Aggregate{ticker}-{group_tag}-short"
+    graphs_job_name_short = f"Graphs{ticker}-short-"
 
     print(f"Submitting job with name: {trades_job_name} with scenario: {full_scenario}")
 
@@ -301,6 +310,10 @@ def generate_trader_configs(eight_hour_results, fourteen_day_results, ticker, s3
     put_trade_job_on_queue(aggregate_job_name, base_symbol, batch_client, full_scenario,
                            graphs_job_name, group_tag, queue_name, s3_key_min,
                            scenario, symbol_file, ticker, trade_type, trades_job_name)
+
+    put_trade_job_on_queue(aggregate_job_name_short, base_symbol, batch_client, full_scenario_short,
+                           graphs_job_name_short, group_tag, queue_name, s3_key_min,
+                           scenario_short, symbol_file, ticker, "short", trades_job_name_short)
 
     if success:
         # Add S3 information to the result
