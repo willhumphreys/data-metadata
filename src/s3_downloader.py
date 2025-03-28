@@ -4,9 +4,6 @@ import boto3
 import subprocess
 from dotenv import load_dotenv
 
-# Default S3 key path - can be used when no command line argument is provided
-
-DEFAULT_S3_KEY_PATH = "stocks/AAPL/polygon/2025/03/23/22/AAPL_polygon_hour.csv.lzo"
 # Default output directory
 DEFAULT_OUTPUT_DIR = "../output"
 
@@ -27,8 +24,7 @@ def download_from_s3(key_path=None, output_dir=None):
     """
     # If no key_path provided, use default
     if key_path is None:
-        key_path = DEFAULT_S3_KEY_PATH
-        print(f"No S3 key path provided. Using default: {key_path}")
+        raise Exception("Error: No s3 key path provided")
 
     # If no output_dir provided, use default
     if output_dir is None:
@@ -65,7 +61,7 @@ def download_from_s3(key_path=None, output_dir=None):
         s3_client = boto3.client('s3', region_name=region)
 
         # Download the file
-        print(f"Downloading file...")
+        print(f"Downloading file...{bucket} {key_path} to  {output_path}")
         s3_client.download_file(bucket, key_path, output_path)
 
         print(f"Download complete. File saved as: {output_path}")
@@ -78,7 +74,8 @@ def download_from_s3(key_path=None, output_dir=None):
         return output_path  # Return the original file path if not LZO
 
     except Exception as e:
-        sys.exit(f"Error downloading file: {e}")
+        raise e
+        
 
 
 def decompress_lzo(lzo_filepath, output_dir=None):
@@ -123,7 +120,7 @@ def decompress_lzo(lzo_filepath, output_dir=None):
     except subprocess.CalledProcessError as e:
         print(f"Error decompressing file: {e}")
         print("If you're receiving 'command not found', please install lzop.")
-        return None
+        raise
 
 
 # Direct function call for easier usage in IntelliJ (can run file directly)
