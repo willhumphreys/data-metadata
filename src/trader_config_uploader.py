@@ -76,18 +76,3 @@ def upload_trader_config(config_file_path, ticker=None, date_str=None):
     success = upload_file_to_s3(config_file_path, s3_upload_bucket, s3_key, s3_region)
 
     return success, s3_key if success else None
-
-
-
-
-    # Use provided ticker and date or get from environment variables, otherwise use defaults
-    ticker = ticker or os.environ.get('TICKER', 'unknown')
-
-
-    # Create key with format: prefix/ticker/date/trader_config_timestamp.json
-    s3_key = f"{s3_upload_key_prefix}/{ticker}/trader_config_.json"
-
-    # Upload the file
-    success = upload_file_to_s3(config_file_path, s3_upload_bucket, s3_key, s3_region)
-
-    return success, s3_key
