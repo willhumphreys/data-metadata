@@ -32,6 +32,10 @@ def clean_directory(directory):
 def pipeline(ticker=None, s3_key_path=None, output_dir=DEFAULT_OUTPUT_DIR, clean_output=True,
              target_combinations=100000, group_tag=None, s3_key_min=None):
 
+    if ticker is None:
+        print("Error: Ticker is required")
+        raise ValueError("Ticker is required")
+
     if clean_output:
         print(f"Cleaning output directory: {output_dir}")
         clean_directory(output_dir)
@@ -267,7 +271,7 @@ def main():
     Parse command line arguments and execute the pipeline.
     """
     parser = argparse.ArgumentParser(description='Download stock data and calculate maximum price ranges.')
-    parser.add_argument('--ticker', type=str, default='AAPL', help='Stock ticker symbol')
+    parser.add_argument('--ticker', type=str, help='Stock ticker symbol')
     parser.add_argument('--date', type=str, help='Date to analyze (YYYY-MM-DD), defaults to yesterday')
     # parser.add_argument('--time-windows', type=str, default="8,336",
     #                     help='Comma-separated list of time windows in hours (default: 8,336)')

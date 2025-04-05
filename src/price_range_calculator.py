@@ -93,6 +93,8 @@ def load_price_data(file_path):
 
     Args:
         file_path (str): Path to the CSV file containing price data.
+        Supports both standard format (timestamp, high, low, etc.) and
+        abbreviated format (t, h, l, etc.).
 
     Returns:
         pandas.DataFrame: Preprocessed DataFrame with datetime index and price columns.
@@ -101,13 +103,51 @@ def load_price_data(file_path):
         # Load the data
         df = pd.read_csv(file_path)
 
-        # Check if required columns exist
-        required_columns = ['timestamp', 'high', 'low']
-        missing_columns = [col for col in required_columns if col not in df.columns]
+        # Define column mappings between standard and abbreviated formats
+        column_mappings = {
+            'timestamp': 't',
+            'open': 'o',
+            'high': 'h',
+            'low': 'l',
+            'close': 'c',
+            'volume': 'v',
+            'vwap': 'vw',
+            'count': 'n'
+        }
+
+        # Check which format we have (standard or abbreviated)
+        if ('t' in df.columns and 'timestamp' not in df.columns) or \
+                ('h' in df.columns and 'high' not in df.columns) or \
+                ('l' in df.columns and 'low' not in df.columns):
+            # Abbreviated format detected - rename to standard format
+            rename_dict = {v: k for k, v in column_mappings.items() if v in df.columns}
+            df = df.rename(columns=rename_dict)
+            print("Detected abbreviated column format, converted to standard format")
+        else:
+            print("Using standard column format")
+
+        # Check if required columns exist after potential renaming
+        standard_required = ['timestamp', 'high', 'low']
+        missing_columns = [col for col in standard_required if col not in df.columns]
 
         if missing_columns:
-            print(f"Error: Missing required columns: {', '.join(missing_columns)}")
-            return pd.DataFrame()
+            # Try checking original abbreviated names if standard names are missing
+            abbr_missing = []
+            for col in missing_columns:
+                abbr_col = column_mappings.get(col)
+                if abbr_col and abbr_col not in df.columns:
+                    abbr_missing.append(abbr_col)
+
+            # If both standard and abbreviated versions are missing
+            if abbr_missing:
+                print(f"Error: Missing required columns: {', '.join(missing_columns)}")
+                print(f"Also missing abbreviated versions: {', '.join(abbr_missing)}")
+                return pd.DataFrame()
+            else:
+                # Try using abbreviated columns directly
+                reverse_mapping = {v: k for k, v in column_mappings.items()}
+                df = df.rename(columns=reverse_mapping)
+                print("Using abbreviated columns directly")
 
         # Convert timestamp from milliseconds to datetime
         df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
