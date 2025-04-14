@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import re
 import shutil
 import boto3
 
@@ -138,12 +139,13 @@ def create_batch_parameters(group_tag, scenario, ticker, trade_type="long", s3_k
         full_scenario = f"{scenario}___short"
 
     # Generate job names
-    trades_job_name = f"Trades{ticker}-{group_tag}"
-    aggregate_job_name = f"Aggregate{ticker}-{group_tag}-{trade_type}"
-    graphs_job_name = f"Graphs{ticker}-"
+    sanitized_ticker = sanitize_job_name(ticker)
+    trades_job_name = f"Trades{sanitized_ticker}-{group_tag}"
+    aggregate_job_name = f"Aggregate{sanitized_ticker}-{group_tag}-{trade_type}"
+    graphs_job_name = f"Graphs{sanitized_ticker}-"
     # trades_job_name_short = f"Trades{ticker}-{group_tag}-short"
-    aggregate_job_name_short = f"Aggregate{ticker}-{group_tag}-{trade_type}"
-    graphs_job_name = f"Graphs{ticker}-{trade_type}-"
+    aggregate_job_name_short = f"Aggregate{sanitized_ticker}-{group_tag}-{trade_type}"
+    graphs_job_name = f"Graphs{sanitized_ticker}-{trade_type}-"
     print(f"Submitting job with name: {trades_job_name} with scenario: {full_scenario}")
     # Common job queue
     queue_name = "fargateSpotTrades"
@@ -289,6 +291,13 @@ def main():
 
     return result
 
+def sanitize_job_name(name):
+    """
+    Sanitize job name by replacing invalid characters with valid ones.
+    AWS Batch job names can only contain letters, numbers, hyphens (-) and underscores (_).
+    """
+    # Replace colons with underscores or another valid character
+    return re.sub(r'[^a-zA-Z0-9\-_]', '_', name)
 
 if __name__ == "__main__":
     main()
