@@ -3,12 +3,13 @@
 import argparse
 import re
 import shutil
+
 import boto3
 
-from price_range_calculator import calculate_max_range, load_price_data
-from s3_downloader import download_from_s3, DEFAULT_OUTPUT_DIR
 from job_placer import put_trade_job_on_queue
 from models import BatchParameters
+from price_range_calculator import calculate_max_range, load_price_data
+from s3_downloader import download_from_s3, DEFAULT_OUTPUT_DIR
 
 
 def clean_directory(directory):
@@ -32,7 +33,6 @@ def clean_directory(directory):
 
 def pipeline(ticker=None, s3_key_path=None, output_dir=DEFAULT_OUTPUT_DIR, clean_output=True,
              target_combinations=100000, group_tag=None, s3_key_min=None):
-
     if ticker is None:
         print("Error: Ticker is required")
         raise ValueError("Ticker is required")
@@ -68,7 +68,7 @@ def pipeline(ticker=None, s3_key_path=None, output_dir=DEFAULT_OUTPUT_DIR, clean
     add_results(df, 336 * 2, "time_to_hold", results28Days)
 
     trader_config = place_trade_jobs(results28Days["time_to_place"], results28Days["time_to_hold"], ticker, s3_key_min,
-                                 target_combinations, group_tag=group_tag, time_to_hold=28, time_to_fill=8)
+                                     target_combinations, group_tag=group_tag, time_to_hold=28, time_to_fill=8)
 
     results42Days = {}
 
@@ -76,16 +76,11 @@ def pipeline(ticker=None, s3_key_path=None, output_dir=DEFAULT_OUTPUT_DIR, clean
     add_results(df, 336 * 3, "time_to_hold", results42Days)
 
     trader_config = place_trade_jobs(results42Days["time_to_place"], results42Days["time_to_hold"], ticker, s3_key_min,
-                                 target_combinations, group_tag=group_tag, time_to_hold=42, time_to_fill=8)
+                                     target_combinations, group_tag=group_tag, time_to_hold=42, time_to_fill=8)
 
-    combined_results = {
-        "14days": results,
-        "28days": results28Days,
-        "42days": results42Days
-    }
+    combined_results = {"14days": results, "28days": results28Days, "42days": results42Days}
 
     return combined_results
-
 
 
 def add_results(df, hours, text, results):
@@ -127,6 +122,7 @@ def numpy_encoder(obj):
     else:
         return obj
 
+
 def create_batch_parameters(group_tag, scenario, ticker, trade_type="long", s3_key_min=None):
     # Format ticker for scenario
     symbol_file = f"{ticker}-1mF.csv"
@@ -146,13 +142,22 @@ def create_batch_parameters(group_tag, scenario, ticker, trade_type="long", s3_k
     # trades_job_name_short = f"Trades{ticker}-{group_tag}-short"
     aggregate_job_name_short = f"Aggregate{sanitized_ticker}-{group_tag}-{trade_type}"
     graphs_job_name = f"Graphs{sanitized_ticker}-{trade_type}-"
+
+    trade_extract_job_name = f"TradeExtract{sanitized_ticker}-{group_tag}"
+
+    py_trade_lens_job_name = f"PyTradeLens{sanitized_ticker}-{group_tag}"
+
+    trade_summary_job_name = f"TradeSummary{sanitized_ticker}-{group_tag}"
+
     print(f"Submitting job with name: {trades_job_name} with scenario: {full_scenario}")
     # Common job queue
     queue_name = "fargateSpotTrades"
     print(f"Using queue: {queue_name}")
     return BatchParameters(aggregate_job_name=aggregate_job_name, base_symbol=base_symbol, full_scenario=full_scenario,
-        graphs_job_name=graphs_job_name, queue_name=queue_name, scenario=scenario, symbol_file=symbol_file,
-        trade_type=trade_type, trades_job_name=trades_job_name, group_tag=group_tag, s3_key_min=s3_key_min)
+                           graphs_job_name=graphs_job_name, queue_name=queue_name, scenario=scenario,
+                           symbol_file=symbol_file, trade_type=trade_type, trades_job_name=trades_job_name,
+                           group_tag=group_tag, s3_key_min=s3_key_min, trade_extract_job_name=trade_extract_job_name,
+                           py_trade_lens_job_name=py_trade_lens_job_name, trade_summary_job_name=trade_summary_job_name)
 
 
 def place_trade_jobs(time_to_place_results: dict, time_to_hold_results: dict, ticker: str, s3_key_min: str,
@@ -286,10 +291,10 @@ def main():
     args = parser.parse_args()
 
     result = pipeline(ticker=args.ticker, s3_key_path=args.s3_key_hour, output_dir=args.output_dir,
-                      clean_output=not args.no_clean, group_tag=args.group_tag,
-                      s3_key_min=args.s3_key_min)
+                      clean_output=not args.no_clean, group_tag=args.group_tag, s3_key_min=args.s3_key_min)
 
     return result
+
 
 def sanitize_job_name(name):
     """
@@ -298,6 +303,7 @@ def sanitize_job_name(name):
     """
     # Replace colons with underscores or another valid character
     return re.sub(r'[^a-zA-Z0-9\-_]', '_', name)
+
 
 if __name__ == "__main__":
     main()

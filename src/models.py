@@ -15,3 +15,6 @@ class BatchParameters:
     symbol_file: str
     trade_type: str
     trades_job_name: str
+    trade_extract_job_name: str
+    py_trade_lens_job_name: str
+    trade_summary_job_name: str

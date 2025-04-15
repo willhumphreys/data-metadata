@@ -76,9 +76,9 @@ def put_trade_job_on_queue(batch_params: BatchParameters, batch_client):
             best_traders_job_id = graph_response['jobId']
             print(f"Submitted bestTraders.r graph job with ID: {best_traders_job_id}")
     # Submit trade-extract job
-    trade_extract_job_name = f"trade-extract-{batch_params.base_symbol}-{batch_params.group_tag}"
-    print(f"Submitting trade-extract job with name: {trade_extract_job_name}")
-    trade_extract_response = batch_client.submit_job(jobName=trade_extract_job_name, jobQueue=batch_params.queue_name,
+
+    print(f"Submitting trade-extract job with name: {batch_params.trade_extract_job_name}-{batch_params.group_tag}")
+    trade_extract_response = batch_client.submit_job(jobName=batch_params.trade_extract_job_name, jobQueue=batch_params.queue_name,
                                                      jobDefinition="trade-extract",
                                                      dependsOn=[{'jobId': best_traders_job_id}], containerOverrides={
             "command": ["--symbol", symbol_with_provider, "--scenario", batch_params.scenario],
@@ -91,9 +91,8 @@ def put_trade_job_on_queue(batch_params: BatchParameters, batch_client):
     trade_extract_job_id = trade_extract_response['jobId']
     print(f"Submitted trade-extract job with ID: {trade_extract_job_id}")
     # Submit py-trade-lens job
-    py_trade_lens_job_name = f"py-trade-lens-{batch_params.base_symbol}-{batch_params.group_tag}"
-    print(f"Submitting py-trade-lens job with name: {py_trade_lens_job_name}")
-    py_trade_lens_response = batch_client.submit_job(jobName=py_trade_lens_job_name, jobQueue=batch_params.queue_name,
+
+    py_trade_lens_response = batch_client.submit_job(jobName=batch_params.py_trade_lens_job_name, jobQueue=batch_params.queue_name,
                                                      jobDefinition="py-trade-lens",
                                                      dependsOn=[{'jobId': trade_extract_job_id}], containerOverrides={
             "command": ["--symbol", symbol_with_provider, "--scenario", batch_params.scenario]},
@@ -103,9 +102,8 @@ def put_trade_job_on_queue(batch_params: BatchParameters, batch_client):
     py_trade_lens_job_id = py_trade_lens_response['jobId']
     print(f"Submitted py-trade-lens job with ID: {py_trade_lens_job_id}")
     # Submit trade-summary job
-    trade_summary_job_name = f"trade_summary-{batch_params.base_symbol}-{batch_params.group_tag}"
-    print(f"Submitting trade-summary job with name: {trade_summary_job_name}")
-    trade_summary_response = batch_client.submit_job(jobName=trade_summary_job_name, jobQueue=batch_params.queue_name,
+
+    trade_summary_response = batch_client.submit_job(jobName=batch_params.trade_summary_job_name, jobQueue=batch_params.queue_name,
                                                      jobDefinition="trade-summary",
                                                      dependsOn=[{'jobId': py_trade_lens_job_id}],
                                                      containerOverrides={"command": ["--symbol", symbol_with_provider]},
