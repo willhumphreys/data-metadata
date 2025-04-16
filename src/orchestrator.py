@@ -62,23 +62,23 @@ def pipeline(ticker=None, s3_key_path=None, output_dir=DEFAULT_OUTPUT_DIR, clean
     trader_config = place_trade_jobs(results["time_to_place"], results["time_to_hold"], ticker, s3_key_min,
                                      target_combinations, group_tag=group_tag, time_to_hold=14, time_to_fill=8)
 
-    results28Days = {}
+    results28_days = {}
 
-    add_results(df, 8, "time_to_place", results28Days)
-    add_results(df, 336 * 2, "time_to_hold", results28Days)
+    add_results(df, 8, "time_to_place", results28_days)
+    add_results(df, 336 * 2, "time_to_hold", results28_days)
 
-    trader_config = place_trade_jobs(results28Days["time_to_place"], results28Days["time_to_hold"], ticker, s3_key_min,
+    trader_config = place_trade_jobs(results28_days["time_to_place"], results28_days["time_to_hold"], ticker, s3_key_min,
                                      target_combinations, group_tag=group_tag, time_to_hold=28, time_to_fill=8)
 
-    results42Days = {}
+    results42_days = {}
 
-    add_results(df, 8, "time_to_place", results42Days)
-    add_results(df, 336 * 3, "time_to_hold", results42Days)
+    add_results(df, 8, "time_to_place", results42_days)
+    add_results(df, 336 * 3, "time_to_hold", results42_days)
 
-    trader_config = place_trade_jobs(results42Days["time_to_place"], results42Days["time_to_hold"], ticker, s3_key_min,
+    trader_config = place_trade_jobs(results42_days["time_to_place"], results42_days["time_to_hold"], ticker, s3_key_min,
                                      target_combinations, group_tag=group_tag, time_to_hold=42, time_to_fill=8)
 
-    combined_results = {"14days": results, "28days": results28Days, "42days": results42Days}
+    combined_results = {"14days": results, "28days": results28_days, "42days": results42_days}
 
     return combined_results
 
@@ -132,7 +132,7 @@ def create_batch_parameters(group_tag, scenario, ticker, trade_type="long", s3_k
     if trade_type == "long":
         full_scenario = f"{scenario}___{symbol_file}"
     else:
-        full_scenario = f"{scenario}___short"
+        full_scenario = f"{scenario}___short___{symbol_file}"
 
     # Generate job names
     sanitized_ticker = sanitize_job_name(ticker)
@@ -223,24 +223,56 @@ def place_trade_jobs(time_to_place_results: dict, time_to_hold_results: dict, ti
 
         total_combinations = num_stops * num_limits * num_offsets * num_durations * num_outputs
 
-    # Generate the configuration string
-    scenario = f"s_{stop_min}..{stop_max}..{stop_step}___" + f"l_{limit_min}..{limit_max}..{limit_step}___" + f"o_{offset_min}..{offset_max}..{offset_step}___" + f"d_{duration_min}..{duration_max}..{duration_step}___" + f"out_{output_min}..{output_max}..{output_step}"
+    offset_mid = offset_min + ((offset_max - offset_min) // 2)
 
-    # Create result dictionary
-    result = {'scenario': scenario, 'total_combinations': total_combinations,
-              'parameters': {'stops': {'min': stop_min, 'max': stop_max, 'step': stop_step, 'count': num_stops},
-                             'limits': {'min': limit_min, 'max': limit_max, 'step': limit_step, 'count': num_limits},
-                             'offsets': {'min': offset_min, 'max': offset_max, 'step': offset_step,
-                                         'count': num_offsets},
-                             'durations': {'min': duration_min, 'max': duration_max, 'step': duration_step,
-                                           'count': num_durations},
-                             'outputs': {'min': output_min, 'max': output_max, 'step': output_step,
-                                         'count': num_outputs}},
-              'price_analysis': {'short_term': {'max_range': time_to_place_range, 'window_hours': 8},
-                                 'long_term': {'max_range': time_to_hold_range, 'window_hours': 336  # 14 days
-                                               }}}
+    # Generate the configuration strings for both scenarios
+    scenario1 = f"s_{stop_min}..{stop_max}..{stop_step}___" + \
+                f"l_{limit_min}..{limit_max}..{limit_step}___" + \
+                f"o_{offset_min}..{offset_mid}..{offset_step}___" + \
+                f"d_{duration_min}..{duration_max}..{duration_step}___" + \
+                f"out_{output_min}..{output_max}..{output_step}"
 
-    # Process the entire dictionary to ensure all values are JSON serializable
+    scenario2 = f"s_{stop_min}..{stop_max}..{stop_step}___" + \
+                f"l_{limit_min}..{limit_max}..{limit_step}___" + \
+                f"o_{offset_mid + offset_step}..{offset_max}..{offset_step}___" + \
+                f"d_{duration_min}..{duration_max}..{duration_step}___" + \
+                f"out_{output_min}..{output_max}..{output_step}"
+
+    # Calculate combinations for each scenario
+    num_offsets1 = ((offset_mid - offset_min) // offset_step) + 1
+    num_offsets2 = ((offset_max - (offset_mid + offset_step)) // offset_step) + 1
+
+    total_combinations1 = num_stops * num_limits * num_offsets1 * num_durations * num_outputs
+    total_combinations2 = num_stops * num_limits * num_offsets2 * num_durations * num_outputs
+
+    # Create result dictionaries
+    result1 = {'scenario': scenario1, 'total_combinations': total_combinations1,
+               'parameters': {'stops': {'min': stop_min, 'max': stop_max, 'step': stop_step, 'count': num_stops},
+                              'limits': {'min': limit_min, 'max': limit_max, 'step': limit_step, 'count': num_limits},
+                              'offsets': {'min': offset_min, 'max': offset_mid, 'step': offset_step,
+                                          'count': num_offsets1},
+                              'durations': {'min': duration_min, 'max': duration_max, 'step': duration_step,
+                                            'count': num_durations},
+                              'outputs': {'min': output_min, 'max': output_max, 'step': output_step,
+                                          'count': num_outputs}},
+               'price_analysis': {'short_term': {'max_range': time_to_place_range, 'window_hours': 8},
+                                  'long_term': {'max_range': time_to_hold_range, 'window_hours': 336  # 14 days
+                                                }}}
+
+    result2 = {'scenario': scenario2, 'total_combinations': total_combinations2,
+               'parameters': {'stops': {'min': stop_min, 'max': stop_max, 'step': stop_step, 'count': num_stops},
+                              'limits': {'min': limit_min, 'max': limit_max, 'step': limit_step, 'count': num_limits},
+                              'offsets': {'min': offset_mid + offset_step, 'max': offset_max, 'step': offset_step,
+                                          'count': num_offsets2},
+                              'durations': {'min': duration_min, 'max': duration_max, 'step': duration_step,
+                                            'count': num_durations},
+                              'outputs': {'min': output_min, 'max': output_max, 'step': output_step,
+                                          'count': num_outputs}},
+               'price_analysis': {'short_term': {'max_range': time_to_place_range, 'window_hours': 8},
+                                  'long_term': {'max_range': time_to_hold_range, 'window_hours': 336  # 14 days
+                                                }}}
+
+    # Process the entire dictionaries to ensure all values are JSON serializable
     def convert_dict_values(d):
         if isinstance(d, dict):
             return {k: convert_dict_values(v) for k, v in d.items()}
@@ -249,28 +281,48 @@ def place_trade_jobs(time_to_place_results: dict, time_to_hold_results: dict, ti
         else:
             return numpy_encoder(d)
 
-    result = convert_dict_values(result)
+    result1 = convert_dict_values(result1)
+    result2 = convert_dict_values(result2)
 
-    # Write to JSON file
-    with open(output_file, 'w') as f:
-        json.dump(result, f, indent=2)
+    # Create file names for both scenarios
+    output_file1 = output_file.replace(".json", "_scenario1.json")
+    output_file2 = output_file.replace(".json", "_scenario2.json")
 
-    print(f"Trader configuration saved to {os.path.abspath(output_file)}")
+    # Write both configurations to JSON files
+    with open(output_file1, 'w') as f:
+        json.dump(result1, f, indent=2)
 
-    # Upload to S3 if environment variables are set
-    # success, s3_key = upload_trader_config(output_file, ticker)
+    with open(output_file2, 'w') as f:
+        json.dump(result2, f, indent=2)
 
-    batch_params_long = create_batch_parameters(group_tag, scenario, ticker, "long", s3_key_min)
-    batch_params_short = create_batch_parameters(group_tag, scenario, ticker, "short", s3_key_min)
+    print(f"Trader configuration for scenario 1 saved to {os.path.abspath(output_file1)}")
+    print(f"Trader configuration for scenario 2 saved to {os.path.abspath(output_file2)}")
 
     # Initialize boto3 client
     batch_client = boto3.client('batch')
 
-    put_trade_job_on_queue(batch_params_long, batch_client)
+    # Create and queue jobs for scenario 1
+    batch_params_long_1 = create_batch_parameters(group_tag, scenario1, ticker, "long", s3_key_min)
+    batch_params_short_1 = create_batch_parameters(group_tag, scenario1, ticker, "short", s3_key_min)
 
-    put_trade_job_on_queue(batch_params_short, batch_client)
+    put_trade_job_on_queue(batch_params_long_1, batch_client)
+    put_trade_job_on_queue(batch_params_short_1, batch_client)
 
-    return {'statusCode': 200, 'body': json.dumps({'message': f'Successfully calculated new scenarios for {ticker}'})}
+    # Create and queue jobs for scenario 2
+    batch_params_long_2 = create_batch_parameters(group_tag, scenario2, ticker, "long", s3_key_min)
+    batch_params_short_2 = create_batch_parameters(group_tag, scenario2, ticker, "short", s3_key_min)
+
+    put_trade_job_on_queue(batch_params_long_2, batch_client)
+    put_trade_job_on_queue(batch_params_short_2, batch_client)
+
+    return {
+        'statusCode': 200,
+        'body': json.dumps({
+            'message': f'Successfully calculated new scenarios for {ticker}',
+            'scenario1_combinations': total_combinations1,
+            'scenario2_combinations': total_combinations2
+        })
+    }
 
 
 def main():
