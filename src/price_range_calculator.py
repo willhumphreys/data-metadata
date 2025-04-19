@@ -3,25 +3,6 @@
 import pandas as pd
 import argparse
 import sys
-from datetime import timedelta
-
-
-#!/usr/bin/env python3
-
-import pandas as pd
-import numpy as np
-import argparse
-import sys
-from datetime import timedelta
-
-
-#!/usr/bin/env python3
-
-import pandas as pd
-import argparse
-import sys
-from datetime import timedelta
-
 
 def calculate_max_range(df, time_window_hours):
     """
@@ -157,7 +138,7 @@ def main():
         sys.exit("Error: No data available for analysis")
 
     # Calculate max price range using the faster function
-    result = calculate_max_range_fast(df, args.time_window)
+    result = calculate_max_range(df, args.time_window)
 
     if result:
         print("\n===== Results =====")
