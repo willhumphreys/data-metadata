@@ -31,8 +31,8 @@ def clean_directory(directory):
         os.makedirs(directory)
 
 
-def pipeline(ticker=None, s3_key_path=None, output_dir=DEFAULT_OUTPUT_DIR, clean_output=True,
-             target_combinations=100000, group_tag=None, s3_key_min=None):
+def pipeline(ticker=None, output_dir=DEFAULT_OUTPUT_DIR, clean_output=True, target_combinations=100000, group_tag=None,
+             s3_key_min=None):
     if ticker is None:
         print("Error: Ticker is required")
         raise ValueError("Ticker is required")
@@ -41,10 +41,12 @@ def pipeline(ticker=None, s3_key_path=None, output_dir=DEFAULT_OUTPUT_DIR, clean
         print(f"Cleaning output directory: {output_dir}")
         clean_directory(output_dir)
 
-    file_path = download_from_s3(s3_key_path, output_dir)
+    bucket = os.environ.get('MOCHI_DATA_BUCKET')
+
+    file_path = download_from_s3(s3_key_min, output_dir, bucket=bucket)
 
     if not file_path:
-        print(f"Error: Failed to download data for {s3_key_path}")
+        print(f"Error: Failed to download data for {s3_key_min}")
         raise ValueError("Failed to download data")
 
     print(f"\n[2/2] Calculating maximum price ranges...")
@@ -67,16 +69,18 @@ def pipeline(ticker=None, s3_key_path=None, output_dir=DEFAULT_OUTPUT_DIR, clean
     add_results(df, 8, "time_to_place", results28_days)
     add_results(df, 336 * 2, "time_to_hold", results28_days)
 
-    trader_config = place_trade_jobs(results28_days["time_to_place"], results28_days["time_to_hold"], ticker, s3_key_min,
-                                     target_combinations, group_tag=group_tag, time_to_hold=28, time_to_fill=8)
+    trader_config = place_trade_jobs(results28_days["time_to_place"], results28_days["time_to_hold"], ticker,
+                                     s3_key_min, target_combinations, group_tag=group_tag, time_to_hold=28,
+                                     time_to_fill=8)
 
     results42_days = {}
 
     add_results(df, 8, "time_to_place", results42_days)
     add_results(df, 336 * 3, "time_to_hold", results42_days)
 
-    trader_config = place_trade_jobs(results42_days["time_to_place"], results42_days["time_to_hold"], ticker, s3_key_min,
-                                     target_combinations, group_tag=group_tag, time_to_hold=42, time_to_fill=8)
+    trader_config = place_trade_jobs(results42_days["time_to_place"], results42_days["time_to_hold"], ticker,
+                                     s3_key_min, target_combinations, group_tag=group_tag, time_to_hold=42,
+                                     time_to_fill=8)
 
     combined_results = {"14days": results, "28days": results28_days, "42days": results42_days}
 
@@ -187,18 +191,18 @@ def place_trade_jobs(time_to_place_results: dict, time_to_hold_results: dict, ti
     output_max = time_to_fill
     output_step = 4
 
-    # Calculate steps to get close to target_combinations
+    # Calculate steps to get close to target_combinations (100,000 per scenario)
     target_per_variable = int(target_combinations ** (1 / 3))
 
-    # Calculate steps
+    # Calculate initial steps - use a more aggressive initial estimate
     stop_range = stop_max - stop_min
-    stop_step = max(1, int(stop_range / target_per_variable))
+    stop_step = max(1, int(stop_range / (target_per_variable * 0.8)))  # More aggressive
 
     limit_range = limit_max - limit_min
-    limit_step = max(1, int(limit_range / target_per_variable))
+    limit_step = max(1, int(limit_range / (target_per_variable * 0.8)))  # More aggressive
 
     offset_range = offset_max - offset_min
-    offset_step = max(1, int(offset_range / target_per_variable))
+    offset_step = max(1, int(offset_range / (target_per_variable * 0.8)))  # More aggressive
 
     # Calculate number of combinations
     num_stops = 1 + (stop_max - stop_min) // stop_step if stop_step > 0 else 1
@@ -209,34 +213,45 @@ def place_trade_jobs(time_to_place_results: dict, time_to_hold_results: dict, ti
 
     total_combinations = num_stops * num_limits * num_offsets * num_durations * num_outputs
 
-    # Fine-tune to get closer to target combinations
-    if abs(total_combinations - target_combinations) > (target_combinations * 0.1):
-        adjustment = (target_combinations / total_combinations) ** (1 / 3)
+    # Fine-tune to get closer to target combinations - CORRECTED LOGIC
+    if total_combinations > target_combinations * 1.1:  # If over by more than 10%
+        # CORRECTED: When total_combinations is too large, we need LARGER steps
+        adjustment = (total_combinations / target_combinations) ** (1 / 3)
 
-        stop_step = max(1, int(stop_step / adjustment))
-        limit_step = max(1, int(limit_step / adjustment))
-        offset_step = max(1, int(offset_step / adjustment))
+        stop_step = max(1, int(stop_step * adjustment))  # MULTIPLY by adjustment
+        limit_step = max(1, int(limit_step * adjustment))  # MULTIPLY by adjustment
+        offset_step = max(1, int(offset_step * adjustment))  # MULTIPLY by adjustment
 
+        # Recalculate counts after adjustment
         num_stops = 1 + (stop_max - stop_min) // stop_step if stop_step > 0 else 1
         num_limits = 1 + (limit_max - limit_min) // limit_step if limit_step > 0 else 1
         num_offsets = 1 + (offset_max - offset_min) // offset_step if offset_step > 0 else 1
 
+        # Recalculate total
         total_combinations = num_stops * num_limits * num_offsets * num_durations * num_outputs
+
+        # If still too large, apply a more aggressive approach
+        if total_combinations > target_combinations * 1.1:
+            # Take the square root of the ratio to make it more aggressive
+            aggressive_adjustment = (total_combinations / target_combinations) ** (1 / 2)
+
+            stop_step = max(1, int(stop_step * aggressive_adjustment))
+            limit_step = max(1, int(limit_step * aggressive_adjustment))
+            offset_step = max(1, int(offset_step * aggressive_adjustment))
+
+            # Recalculate everything again
+            num_stops = 1 + (stop_max - stop_min) // stop_step if stop_step > 0 else 1
+            num_limits = 1 + (limit_max - limit_min) // limit_step if limit_step > 0 else 1
+            num_offsets = 1 + (offset_max - offset_min) // offset_step if offset_step > 0 else 1
+
+            total_combinations = num_stops * num_limits * num_offsets * num_durations * num_outputs
 
     offset_mid = offset_min + ((offset_max - offset_min) // 2)
 
     # Generate the configuration strings for both scenarios
-    scenario1 = f"s_{stop_min}..{stop_max}..{stop_step}___" + \
-                f"l_{limit_min}..{limit_max}..{limit_step}___" + \
-                f"o_{offset_min}..{offset_mid}..{offset_step}___" + \
-                f"d_{duration_min}..{duration_max}..{duration_step}___" + \
-                f"out_{output_min}..{output_max}..{output_step}"
+    scenario1 = f"s_{stop_min}..{stop_max}..{stop_step}___" + f"l_{limit_min}..{limit_max}..{limit_step}___" + f"o_{offset_min}..{offset_mid}..{offset_step}___" + f"d_{duration_min}..{duration_max}..{duration_step}___" + f"out_{output_min}..{output_max}..{output_step}"
 
-    scenario2 = f"s_{stop_min}..{stop_max}..{stop_step}___" + \
-                f"l_{limit_min}..{limit_max}..{limit_step}___" + \
-                f"o_{offset_mid + offset_step}..{offset_max}..{offset_step}___" + \
-                f"d_{duration_min}..{duration_max}..{duration_step}___" + \
-                f"out_{output_min}..{output_max}..{output_step}"
+    scenario2 = f"s_{stop_min}..{stop_max}..{stop_step}___" + f"l_{limit_min}..{limit_max}..{limit_step}___" + f"o_{offset_mid + offset_step}..{offset_max}..{offset_step}___" + f"d_{duration_min}..{duration_max}..{duration_step}___" + f"out_{output_min}..{output_max}..{output_step}"
 
     # Calculate combinations for each scenario
     num_offsets1 = ((offset_mid - offset_min) // offset_step) + 1
@@ -315,14 +330,8 @@ def place_trade_jobs(time_to_place_results: dict, time_to_hold_results: dict, ti
     put_trade_job_on_queue(batch_params_long_2, batch_client)
     put_trade_job_on_queue(batch_params_short_2, batch_client)
 
-    return {
-        'statusCode': 200,
-        'body': json.dumps({
-            'message': f'Successfully calculated new scenarios for {ticker}',
-            'scenario1_combinations': total_combinations1,
-            'scenario2_combinations': total_combinations2
-        })
-    }
+    return {'statusCode': 200, 'body': json.dumps({'message': f'Successfully calculated new scenarios for {ticker}',
+        'scenario1_combinations': total_combinations1, 'scenario2_combinations': total_combinations2})}
 
 
 def main():
@@ -334,7 +343,7 @@ def main():
     parser.add_argument('--date', type=str, help='Date to analyze (YYYY-MM-DD), defaults to yesterday')
     # parser.add_argument('--time-windows', type=str, default="8,336",
     #                     help='Comma-separated list of time windows in hours (default: 8,336)')
-    parser.add_argument('--s3-key-hour', type=str, help='S3 key hour path template')
+    # parser.add_argument('--s3-key-hour', type=str, help='S3 key hour path template')
     parser.add_argument('--s3-key-min', type=str, help='S3 key minute path template')
     parser.add_argument('--output-dir', type=str, default=DEFAULT_OUTPUT_DIR, help='Output directory')
     parser.add_argument('--no-clean', action='store_true', help='Do not clean output directory before starting')
@@ -342,8 +351,8 @@ def main():
 
     args = parser.parse_args()
 
-    result = pipeline(ticker=args.ticker, s3_key_path=args.s3_key_hour, output_dir=args.output_dir,
-                      clean_output=not args.no_clean, group_tag=args.group_tag, s3_key_min=args.s3_key_min)
+    result = pipeline(ticker=args.ticker, output_dir=args.output_dir, clean_output=not args.no_clean,
+                      group_tag=args.group_tag, s3_key_min=args.s3_key_min)
 
     return result
 

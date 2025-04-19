@@ -6,9 +6,26 @@ import sys
 from datetime import timedelta
 
 
+#!/usr/bin/env python3
+
+import pandas as pd
+import numpy as np
+import argparse
+import sys
+from datetime import timedelta
+
+
+#!/usr/bin/env python3
+
+import pandas as pd
+import argparse
+import sys
+from datetime import timedelta
+
+
 def calculate_max_range(df, time_window_hours):
     """
-    Calculate the maximum price range within a given time window.
+    Calculate the maximum price range within a given time window using pandas optimized methods.
 
     Args:
         df (pandas.DataFrame): DataFrame containing price data with datetime index
@@ -16,12 +33,7 @@ def calculate_max_range(df, time_window_hours):
         time_window_hours (int): The time window in hours.
 
     Returns:
-        dict: A dictionary containing:
-            - max_range: The maximum price range
-            - start_time: The start time of the window with maximum range
-            - end_time: The end time of the window with maximum range
-            - high_price: The highest price in the window
-            - low_price: The lowest price in the window
+        dict: A dictionary containing max range information
     """
     if df.empty:
         print("Error: DataFrame is empty")
@@ -37,54 +49,63 @@ def calculate_max_range(df, time_window_hours):
     # Ensure DataFrame is sorted by time
     df = df.sort_index()
 
-    max_range = 0
-    result = {
-        'max_range': 0,
-        'start_time': None,
-        'end_time': None,
-        'high_price': 0,
-        'low_price': 0
-    }
+    # Calculate time delta in the same units as the index
+    time_delta = pd.Timedelta(hours=time_window_hours)
 
-    # Calculate the time delta for our window
-    time_delta = timedelta(hours=time_window_hours)
+    # Create new dataframe to store results
+    result_data = []
 
-    # Iterate through each timestamp as a potential starting point
-    for i in range(len(df)):
-        start_time = df.index[i]
+    # For each row, find all rows within the time window and calculate range
+    start_idx = 0
+    total_rows = len(df)
+
+    while start_idx < total_rows:
+        start_time = df.index[start_idx]
         end_time = start_time + time_delta
 
-        # Get all rows within our time window
+        # Efficiently slice the dataframe using .loc once per window
+        # This limits the amount of data we need to process
         window = df.loc[start_time:end_time]
 
-        # Skip if window is too short (could be at the end of the dataset)
-        if len(window) <= 1:
-            continue
+        # Check that we have enough data and the window doesn't exceed our time limit
+        if len(window) > 1 and window.index[-1] - window.index[0] <= time_delta:
+            # Find highest and lowest prices in this window
+            highest = window['high'].max()
+            lowest = window['low'].min()
+            price_range = highest - lowest
 
-        # Check that the window doesn't exceed our time limit
-        actual_duration = window.index[-1] - window.index[0]
-        if actual_duration > time_delta:
-            continue
-
-        # Find highest and lowest prices in this window
-        highest = window['high'].max()
-        lowest = window['low'].min()
-
-        # Calculate range
-        price_range = highest - lowest
-
-        # Update if this range is greater than the max seen so far
-        if price_range > max_range:
-            max_range = price_range
-            result = {
-                'max_range': max_range,
+            result_data.append({
                 'start_time': window.index[0],
                 'end_time': window.index[-1],
+                'price_range': price_range,
                 'high_price': highest,
                 'low_price': lowest
-            }
+            })
 
-    return result
+        # Move to next row - this makes the algorithm linear time
+        start_idx += 1
+
+        # Optional: print progress for large datasets
+        if start_idx % 10000 == 0:
+            print(f"Processed {start_idx}/{total_rows} rows...")
+
+    if not result_data:
+        print("No valid time windows found")
+        return None
+
+    # Convert results to DataFrame for efficient operations
+    results_df = pd.DataFrame(result_data)
+
+    # Find the row with maximum price range
+    max_range_row = results_df.loc[results_df['price_range'].idxmax()]
+
+    return {
+        'max_range': float(max_range_row['price_range']),
+        'start_time': max_range_row['start_time'],
+        'end_time': max_range_row['end_time'],
+        'high_price': float(max_range_row['high_price']),
+        'low_price': float(max_range_row['low_price'])
+    }
 
 
 def load_price_data(file_path):
@@ -93,76 +114,149 @@ def load_price_data(file_path):
 
     Args:
         file_path (str): Path to the CSV file containing price data.
-        Supports both standard format (timestamp, high, low, etc.) and
-        abbreviated format (t, h, l, etc.).
 
     Returns:
         pandas.DataFrame: Preprocessed DataFrame with datetime index and price columns.
     """
     try:
-        # Load the data
-        df = pd.read_csv(file_path)
+        # Load the data, selecting only the required columns and parsing the 'dateTime' column
+        df = pd.read_csv(file_path, usecols=['dateTime', 'high', 'low'], parse_dates=['dateTime'])
 
-        # Define column mappings between standard and abbreviated formats
-        column_mappings = {
-            'timestamp': 't',
-            'open': 'o',
-            'high': 'h',
-            'low': 'l',
-            'close': 'c',
-            'volume': 'v',
-            'vwap': 'vw',
-            'count': 'n'
-        }
+        # Rename 'dateTime' column to 'timestamp'
+        df = df.rename(columns={'dateTime': 'timestamp'})
 
-        # Check which format we have (standard or abbreviated)
-        if ('t' in df.columns and 'timestamp' not in df.columns) or \
-                ('h' in df.columns and 'high' not in df.columns) or \
-                ('l' in df.columns and 'low' not in df.columns):
-            # Abbreviated format detected - rename to standard format
-            rename_dict = {v: k for k, v in column_mappings.items() if v in df.columns}
-            df = df.rename(columns=rename_dict)
-            print("Detected abbreviated column format, converted to standard format")
-        else:
-            print("Using standard column format")
+        # Set 'timestamp' as the index
+        df = df.set_index('timestamp')
 
-        # Check if required columns exist after potential renaming
-        standard_required = ['timestamp', 'high', 'low']
-        missing_columns = [col for col in standard_required if col not in df.columns]
+        # Sort by timestamp
+        df = df.sort_index()
 
-        if missing_columns:
-            # Try checking original abbreviated names if standard names are missing
-            abbr_missing = []
-            for col in missing_columns:
-                abbr_col = column_mappings.get(col)
-                if abbr_col and abbr_col not in df.columns:
-                    abbr_missing.append(abbr_col)
+        print(f"Loaded {len(df)} rows of price data")
+        return df
 
-            # If both standard and abbreviated versions are missing
-            if abbr_missing:
-                print(f"Error: Missing required columns: {', '.join(missing_columns)}")
-                print(f"Also missing abbreviated versions: {', '.join(abbr_missing)}")
-                return pd.DataFrame()
-            else:
-                # Try using abbreviated columns directly
-                reverse_mapping = {v: k for k, v in column_mappings.items()}
-                df = df.rename(columns=reverse_mapping)
-                print("Using abbreviated columns directly")
+    except Exception as e:
+        print(f"Error loading price data: {str(e)}")
+        return pd.DataFrame()
 
-        # Convert timestamp from milliseconds to datetime
-        df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
 
-        # Set datetime as the index
-        df = df.set_index('datetime')
+def main():
+    """
+    Parse command line arguments and execute the price range calculation.
+    """
+    parser = argparse.ArgumentParser(description='Calculate maximum price range within a time window.')
+    parser.add_argument('file_path', help='Path to the CSV file containing price data')
+    parser.add_argument('--time-window', type=int, default=8,
+                        help='Time window in hours for price range calculation')
 
-        # Convert price columns to integers (scale by multiplying by 100)
-        price_columns = ['open', 'high', 'low', 'close', 'vwap']
-        for col in price_columns:
-            if col in df.columns:
-                # Multiply by 100 and round to nearest integer
-                df[col] = (df[col] * 100).round().astype(int)
+    args = parser.parse_args()
 
-        # Sort by datetime
+    # Load the price data
+    df = load_price_data(args.file_path)
+
+    if df.empty:
+        sys.exit("Error: No data available for analysis")
+
+    # Calculate max price range using the faster function
+    result = calculate_max_range_fast(df, args.time_window)
+
+    if result:
+        print("\n===== Results =====")
+        print(f"Maximum price range within {args.time_window} hours: {result['max_range']}")
+        print(f"  Start time: {result['start_time']}")
+        print(f"  End time: {result['end_time']}")
+        print(f"  High price: {result['high_price']}")
+        print(f"  Low price: {result['low_price']}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+def load_price_data(file_path):
+    """
+    Load and preprocess price data from CSV file.
+
+    Args:
+        file_path (str): Path to the CSV file containing price data.
+
+    Returns:
+        pandas.DataFrame: Preprocessed DataFrame with datetime index and price columns.
+    """
+    try:
+        # Load the data, selecting only the required columns and parsing the 'dateTime' column
+        df = pd.read_csv(file_path, usecols=['dateTime', 'high', 'low'], parse_dates=['dateTime'])
+
+        # Rename 'dateTime' column to 'timestamp'
+        df = df.rename(columns={'dateTime': 'timestamp'})
+
+        # Set 'timestamp' as the index
+        df = df.set_index('timestamp')
+
+        # Sort by timestamp
+        df = df.sort_index()
+
+        print(f"Loaded {len(df)} rows of price data")
+        return df
+
+    except Exception as e:
+        print(f"Error loading price data: {str(e)}")
+        return pd.DataFrame()
+
+
+def main():
+    """
+    Parse command line arguments and execute the price range calculation.
+    """
+    parser = argparse.ArgumentParser(description='Calculate maximum price range within a time window.')
+    parser.add_argument('file_path', help='Path to the CSV file containing price data')
+    parser.add_argument('--time-window', type=int, default=8,
+                        help='Time window in hours for price range calculation')
+
+    args = parser.parse_args()
+
+    # Load the price data
+    df = load_price_data(args.file_path)
+
+    if df.empty:
+        sys.exit("Error: No data available for analysis")
+
+    # Calculate max price range using the optimized function
+    result = calculate_max_range(df, args.time_window)
+
+    if result:
+        print("\n===== Results =====")
+        print(f"Maximum price range within {args.time_window} hours: {result['max_range']}")
+        print(f"  Start time: {result['start_time']}")
+        print(f"  End time: {result['end_time']}")
+        print(f"  High price: {result['high_price']}")
+        print(f"  Low price: {result['low_price']}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+def load_price_data(file_path):
+    """
+    Load and preprocess price data from CSV file.
+
+    Args:
+        file_path (str): Path to the CSV file containing price data.
+
+    Returns:
+        pandas.DataFrame: Preprocessed DataFrame with datetime index and price columns.
+    """
+    try:
+        # Load the data, selecting only the required columns and parsing the 'dateTime' column
+        df = pd.read_csv(file_path, usecols=['dateTime', 'high', 'low'], parse_dates=['dateTime'])
+
+        # Rename 'dateTime' column to 'timestamp'
+        df = df.rename(columns={'dateTime': 'timestamp'})
+
+        # Set 'timestamp' as the index
+        df = df.set_index('timestamp')
+
+        # Sort by timestamp
         df = df.sort_index()
 
         print(f"Loaded {len(df)} rows of price data")

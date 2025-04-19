@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 DEFAULT_OUTPUT_DIR = "../output"
 
 
-def download_from_s3(key_path=None, output_dir=None):
+def download_from_s3(key_path=None, output_dir=None, bucket=None):
     """
     Download a file from S3 using environment variables for region and bucket
     and a provided key path.
@@ -39,7 +39,6 @@ def download_from_s3(key_path=None, output_dir=None):
 
     # Get the region and bucket from environment variables
     region = os.environ.get('AWS_REGION')
-    bucket = os.environ.get('S3_BUCKET')
 
     # Validate environment variables
     if not region:
@@ -129,7 +128,7 @@ def main():
     Main function that can be called directly when running the file
     with no arguments in IntelliJ.
     """
-    return download_from_s3()
+    return download_from_s3(bucket=os.environ.get('S3_BUCKET'))
 
 
 if __name__ == "__main__":
