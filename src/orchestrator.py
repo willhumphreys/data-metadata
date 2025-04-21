@@ -472,18 +472,18 @@ def generate_and_submit_scenarios(
         except Exception as e:
             print(f"  ERROR Submitting LONG job for scenario {scenario_str}: {e}")
 
-        # Submit SHORT
-        try:
-            batch_params_short = create_batch_parameters(group_tag, scenario_str, ticker, "short", s3_key_min)
-            if batch_client:
-                put_trade_job_on_queue(batch_params_short, batch_client)
-            else:
-                put_trade_job_on_queue(batch_params_short, None) # Call mock version
-            submitted_job_count += 1
-            total_combinations_submitted += combinations
-            print(f"  Submitted SHORT job: {batch_params_short.trades_job_name} ({combinations} combinations)")
-        except Exception as e:
-            print(f"  ERROR Submitting SHORT job for scenario {scenario_str}: {e}")
+        # # Submit SHORT
+        # try:
+        #     batch_params_short = create_batch_parameters(group_tag, scenario_str, ticker, "short", s3_key_min)
+        #     if batch_client:
+        #         put_trade_job_on_queue(batch_params_short, batch_client)
+        #     else:
+        #         put_trade_job_on_queue(batch_params_short, None) # Call mock version
+        #     submitted_job_count += 1
+        #     total_combinations_submitted += combinations
+        #     print(f"  Submitted SHORT job: {batch_params_short.trades_job_name} ({combinations} combinations)")
+        # except Exception as e:
+        #     print(f"  ERROR Submitting SHORT job for scenario {scenario_str}: {e}")
 
     # --- 4. Save Configuration and Return Summary ---
     # Calculate the final offset step size used for reporting
