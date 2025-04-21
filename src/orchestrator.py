@@ -13,24 +13,24 @@ import pandas as pd # Assuming load_price_data returns a pandas DataFrame
 
 # Assuming these modules exist and function as in the original code
 # (Ensure these imports match your project structure)
-# from job_placer import put_trade_job_on_queue
-# from models import BatchParameters
-# from price_range_calculator import calculate_max_range, load_price_data
-# from s3_downloader import download_from_s3, DEFAULT_OUTPUT_DIR
+from job_placer import put_trade_job_on_queue
+from models import BatchParameters
+from price_range_calculator import calculate_max_range, load_price_data
+from s3_downloader import download_from_s3, DEFAULT_OUTPUT_DIR
 
-# --- Mocking missing modules for demonstration ---
-class BatchParameters: # Mock
-    def __init__(self, **kwargs): self.__dict__.update(kwargs)
-def put_trade_job_on_queue(params, client): print(f"  (Mock) Submitting job: {params.trades_job_name}"); pass # Mock
-def calculate_max_range(df, hours): return {'max_range': np.random.randint(500, 50000)} # Mock
-def load_price_data(path): return pd.DataFrame({'price': np.random.rand(1000)}) # Mock
-def download_from_s3(key, out_dir, bucket): # Mock
-    mock_path = os.path.join(out_dir, os.path.basename(key))
-    os.makedirs(out_dir, exist_ok=True)
-    with open(mock_path, 'w') as f: f.write("mock,data\n1,2")
-    return mock_path
-DEFAULT_OUTPUT_DIR = "./temp_trade_data"
-# --- End Mocking ---
+# # --- Mocking missing modules for demonstration ---
+# class BatchParameters: # Mock
+#     def __init__(self, **kwargs): self.__dict__.update(kwargs)
+# def put_trade_job_on_queue(params, client): print(f"  (Mock) Submitting job: {params.trades_job_name}"); pass # Mock
+# def calculate_max_range(df, hours): return {'max_range': np.random.randint(500, 50000)} # Mock
+# def load_price_data(path): return pd.DataFrame({'price': np.random.rand(1000)}) # Mock
+# def download_from_s3(key, out_dir, bucket): # Mock
+#     mock_path = os.path.join(out_dir, os.path.basename(key))
+#     os.makedirs(out_dir, exist_ok=True)
+#     with open(mock_path, 'w') as f: f.write("mock,data\n1,2")
+#     return mock_path
+# DEFAULT_OUTPUT_DIR = "./temp_trade_data"
+# # --- End Mocking ---
 
 
 # --- Constants ---
@@ -179,7 +179,8 @@ def create_batch_parameters(group_tag: str, scenario: str, ticker: str, trade_ty
 
 
 # --- calculate_combinations and format_scenario_string remain the same ---
-def calculate_combinations(s_min, s_max, s_step, l_min, l_max, l_step, o_min, o_max, o_step, d_min, d_max, d_step, out_min, out_max, out_step):
+def calculate_combinations(s_min, s_max, s_step, l_min, l_max, l_step, o_min, o_max, o_step, d_min, d_max, d_step,
+                           out_min, out_max, out_step):
     """Calculates the number of combinations for given parameter ranges."""
     s_step = max(1, s_step)
     l_step = max(1, l_step)
@@ -193,18 +194,21 @@ def calculate_combinations(s_min, s_max, s_step, l_min, l_max, l_step, o_min, o_
     num_d = max(0, (d_max - d_min) // d_step) + 1 if d_max >= d_min else 0
     num_out = max(0, (out_max - out_min) // out_step) + 1 if out_max >= out_min else 0
 
+    # Hours of the day (week) parameter from Java implementation (0-167, representing all hours in a week)
+    num_hours = 168
+
     if num_s == 0 or num_l == 0 or num_o == 0 or num_d == 0 or num_out == 0:
-      return 0
+        return 0
 
     total = 1
     try:
         # Use float multiplication for intermediate steps to potentially avoid overflow
         # on extremely large numbers, although Python handles large integers well.
-        total = float(num_s) * float(num_l) * float(num_o) * float(num_d) * float(num_out)
+        total = float(num_s) * float(num_l) * float(num_o) * float(num_d) * float(num_out) * float(num_hours)
         # Check if total exceeds a reasonable threshold or becomes inf
-        if total == float('inf') or total > float(np.iinfo(np.int64).max) * 10: # Check against large float
-           print("Warning: Combination calculation resulted in excessively large number.")
-           return float('inf')
+        if total == float('inf') or total > float(np.iinfo(np.int64).max) * 10:  # Check against large float
+            print("Warning: Combination calculation resulted in excessively large number.")
+            return float('inf')
         # Convert back to int if within reasonable bounds
         total = int(total)
 
@@ -408,9 +412,9 @@ def generate_and_submit_scenarios(
             break # Exit the outer loop
         else:
             print(f"Number of scenario pairs ({num_scenario_pairs}) exceeds the limit ({MAX_SCENARIO_PAIRS}).")
-            # *** Double the Stop/Limit step size for the next attempt ***
-            current_stop_limit_step_size *= 2
-            print(f"Doubling Stop/Limit parameter step size to: {current_stop_limit_step_size}")
+            # *** Increase the Stop/Limit step size by 10% for the next attempt ***
+            current_stop_limit_step_size *= 1.1
+            print(f"Increase Stop/Limit parameter by 10% step size to: {current_stop_limit_step_size}")
             # Offset step will be recalculated at the start of the next iteration
 
         # Safety break: Check if the step size is becoming absurdly large compared to the range it applies to.
@@ -618,6 +622,9 @@ def pipeline(ticker=None, output_dir=DEFAULT_OUTPUT_DIR, clean_output=True, grou
 
 # --- main function ---
 def main():
+
+    INITIAL_STEP_SIZE_HOLD_RANGE_DENOMINATOR = 25 # e.g., step = hold_range / 25
+
     parser = argparse.ArgumentParser(description='Download stock data, calculate price ranges, generate and submit backtesting scenarios.')
     parser.add_argument('--ticker', type=str, required=True, help='Stock ticker symbol (e.g., AAPL)')
     parser.add_argument('--s3-key-min', type=str, required=True, help='S3 key for the minute data CSV file (e.g., path/to/TICKER-1mF.csv)')
@@ -636,10 +643,7 @@ def main():
     if not re.match(r'^[a-zA-Z0-9_\-]+$', args.group_tag):
         print("Warning: Group tag contains characters other than letters, numbers, underscore, hyphen. This might cause issues in some systems.")
 
-    # Update the global constant if overridden by command line argument
-    # Note: Modifying globals like this isn't always ideal, but simple for this case.
-    # A better approach might involve passing it down through functions.
-    global INITIAL_STEP_SIZE_HOLD_RANGE_DENOMINATOR
+
     if args.step_denom != INITIAL_STEP_SIZE_HOLD_RANGE_DENOMINATOR:
          print(f"Overriding initial step size denominator with command line value: {args.step_denom}")
          INITIAL_STEP_SIZE_HOLD_RANGE_DENOMINATOR = args.step_denom
