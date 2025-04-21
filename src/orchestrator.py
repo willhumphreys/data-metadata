@@ -413,9 +413,13 @@ def generate_and_submit_scenarios(
         else:
             print(f"Number of scenario pairs ({num_scenario_pairs}) exceeds the limit ({MAX_SCENARIO_PAIRS}).")
             # *** Increase the Stop/Limit step size by 10% for the next attempt ***
-            current_stop_limit_step_size *= 1.1
             print(f"Increase Stop/Limit parameter by 10% step size to: {current_stop_limit_step_size}")
             # Offset step will be recalculated at the start of the next iteration
+
+            new_step_size = round(current_stop_limit_step_size * 1.1)
+
+            # Ensure the step size is at least 1
+            current_stop_limit_step_size = max(1, new_step_size)
 
         # Safety break: Check if the step size is becoming absurdly large compared to the range it applies to.
         # Define stop/limit ranges again just for the safety check
