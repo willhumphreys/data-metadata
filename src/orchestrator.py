@@ -19,7 +19,7 @@ from s3_downloader import download_from_s3, DEFAULT_OUTPUT_DIR
 
 # --- Constants ---
 # *** Initial fixed step size for STOP and LIMIT ***
-INITIAL_STOP_LIMIT_STEP_SIZE = 100 # Renamed from INITIAL_PARAM_STEP_SIZE
+INITIAL_STOP_LIMIT_STEP_SIZE = 1000 # Renamed from INITIAL_PARAM_STEP_SIZE
 # Fixed duration and output steps (can be adjusted if needed)
 DURATION_STEP = 7
 OUTPUT_STEP = 4
