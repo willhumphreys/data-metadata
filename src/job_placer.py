@@ -95,7 +95,13 @@ def put_trade_job_on_queue(batch_params: BatchParameters, batch_client):
     py_trade_lens_response = batch_client.submit_job(jobName=batch_params.py_trade_lens_job_name, jobQueue=batch_params.queue_name,
                                                      jobDefinition="py-trade-lens",
                                                      dependsOn=[{'jobId': trade_extract_job_id}], containerOverrides={
-            "command": ["--symbol", symbol_with_provider, "--scenario", batch_params.scenario]},
+            "command": ["--symbol", symbol_with_provider, "--scenario", batch_params.scenario],
+            'environment': [
+                {'name': 'MOCHI_DATA_BUCKET', 'value': os.environ.get('MOCHI_DATA_BUCKET')},
+                {'name': 'MOCHI_PROD_TRADE_EXTRACTS', 'value': os.environ.get('MOCHI_PROD_TRADE_EXTRACTS')},
+                {'name': 'AWS_REGION', 'value': os.environ.get('AWS_REGION')}
+            ]
+        },
                                                      tags={"Scenario": batch_params.scenario, "Symbol": batch_params.base_symbol,
                                                            "SubmissionGroupTag": batch_params.group_tag,
                                                            "TaskType": "py-trade-lens"})
