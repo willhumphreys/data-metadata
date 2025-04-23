@@ -43,6 +43,8 @@ OUTPUT_STEP = 4
 MAX_COMBINATIONS_PER_JOB = 950000
 # *** Maximum number of scenario PAIRS (long+short) to submit ***
 MAX_SCENARIO_PAIRS = 50
+# *** Minimum acceptable size for stops and limits as a percentage of the calculated range ***
+MIN_STOP_LIMIT_PERCENTAGE = 0.05 # 5% of the calculated range
 
 # Default holding/filling times
 DEFAULT_HOLD_DAYS = 14
@@ -271,12 +273,21 @@ def generate_and_submit_scenarios(
         offset_max = time_to_place_range + 1
         offset_step = current_offset_step_size # Use calculated offset step
 
+
+        # Stop/Limit range uses time_to_hold_range
+        # Calculate minimum acceptable stop/limit size based on the range
+        min_acceptable_size = int(time_to_hold_range * MIN_STOP_LIMIT_PERCENTAGE)
+        print(f"Minimum acceptable stop/limit size ({MIN_STOP_LIMIT_PERCENTAGE * 100}% of range): {min_acceptable_size}")
+
         # Stop/Limit range uses time_to_hold_range
         stop_min = -time_to_hold_range - 1
-        stop_max = -1
+        raw_stop_max = -1
+        stop_max = max(raw_stop_max, min_acceptable_size * -1)
         stop_step = current_stop_limit_step_size # Use current stop/limit step
 
-        limit_min = 1
+        # Adjust limit_min to ensure it's not too small
+        raw_limit_min = 1
+        limit_min = max(raw_limit_min, min_acceptable_size)
         limit_max = time_to_hold_range + 1
         limit_step = current_stop_limit_step_size # Use current stop/limit step
 
