@@ -282,7 +282,8 @@ def generate_and_submit_scenarios(
         # Stop/Limit range uses time_to_hold_range
         stop_min = -time_to_hold_range - 1
         raw_stop_max = -1
-        stop_max = max(raw_stop_max, min_acceptable_size * -1)
+        stop_max = min(raw_stop_max, min_acceptable_size * -1)  # Use min instead of max to get the more negative value
+        print(f"Calculated stop_max: {stop_max} (min of {raw_stop_max} and {min_acceptable_size * -1})")
         stop_step = current_stop_limit_step_size # Use current stop/limit step
 
         # Adjust limit_min to ensure it's not too small
