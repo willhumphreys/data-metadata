@@ -44,7 +44,7 @@ MAX_COMBINATIONS_PER_JOB = 950000
 # *** Maximum number of scenario PAIRS (long+short) to submit ***
 MAX_SCENARIO_PAIRS = 50
 # *** Minimum acceptable size for stops and limits as a percentage of the calculated range ***
-MIN_STOP_LIMIT_PERCENTAGE = 0.05 # 5% of the calculated range
+MIN_STOP_LIMIT_PERCENTAGE = 0.02 # 5% of the calculated range
 
 # Default holding/filling times
 DEFAULT_HOLD_DAYS = 14
@@ -639,7 +639,7 @@ def pipeline(ticker=None, output_dir=DEFAULT_OUTPUT_DIR, clean_output=True, grou
 # --- main function ---
 def main():
 
-    INITIAL_STEP_SIZE_HOLD_RANGE_DENOMINATOR = 25 # e.g., step = hold_range / 25
+    initial_step_size_hold_range_denominator = 25 # e.g., step = hold_range / 25
 
     parser = argparse.ArgumentParser(description='Download stock data, calculate price ranges, generate and submit backtesting scenarios.')
     parser.add_argument('--ticker', type=str, required=True, help='Stock ticker symbol (e.g., AAPL)')
@@ -650,8 +650,8 @@ def main():
     parser.add_argument('--hold-days', type=int, default=DEFAULT_HOLD_DAYS, help=f'Fixed trade holding duration in days (default: {DEFAULT_HOLD_DAYS})')
     parser.add_argument('--fill-hours', type=int, default=DEFAULT_FILL_HOURS, help=f'Fixed time allowed for order fill in hours (default: {DEFAULT_FILL_HOURS})')
     # Allow overriding the denominator via command line if desired
-    parser.add_argument('--step-denom', type=int, default=INITIAL_STEP_SIZE_HOLD_RANGE_DENOMINATOR,
-                        help=f'Denominator for calculating initial stop/limit step size from hold range (default: {INITIAL_STEP_SIZE_HOLD_RANGE_DENOMINATOR})')
+    parser.add_argument('--step-denom', type=int, default=initial_step_size_hold_range_denominator,
+                        help=f'Denominator for calculating initial stop/limit step size from hold range (default: {initial_step_size_hold_range_denominator})')
 
     args = parser.parse_args()
 
@@ -660,13 +660,13 @@ def main():
         print("Warning: Group tag contains characters other than letters, numbers, underscore, hyphen. This might cause issues in some systems.")
 
 
-    if args.step_denom != INITIAL_STEP_SIZE_HOLD_RANGE_DENOMINATOR:
+    if args.step_denom != initial_step_size_hold_range_denominator:
          print(f"Overriding initial step size denominator with command line value: {args.step_denom}")
-         INITIAL_STEP_SIZE_HOLD_RANGE_DENOMINATOR = args.step_denom
+         initial_step_size_hold_range_denominator = args.step_denom
 
     # Ensure denominator is positive
-    if INITIAL_STEP_SIZE_HOLD_RANGE_DENOMINATOR <= 0:
-        print(f"Error: Step denominator must be positive, got {INITIAL_STEP_SIZE_HOLD_RANGE_DENOMINATOR}")
+    if initial_step_size_hold_range_denominator <= 0:
+        print(f"Error: Step denominator must be positive, got {initial_step_size_hold_range_denominator}")
         exit(1)
 
 
