@@ -150,7 +150,8 @@ def create_batch_parameters(group_tag: str, scenario: str, ticker: str, trade_ty
     """
     symbol_file = f"{ticker}-1mF.csv"  # Assuming this file format based on original code
     base_symbol = ticker
-    full_scenario = f"{scenario}___{'mw___wc=7___' if atr else ''}{'short___' if trade_type == 'short' else ''}{symbol_file}"
+    scenario = f"{scenario}{'___mw___wc=7' if atr else ''}{'___short' if trade_type == 'short' else ''}"
+    full_scenario = f"{scenario}___{symbol_file}"
 
     # s_-300..-10..20___l_10..750..20___o_-10..50..5___d_14..14..7___out_8..8..4___mw___wc=9___btcusd_1-min.csv
     # s_-3000..-100..200___l_100..7500..200___o_-100..500..50___d_14..14..7___out_8..8..4___short___spx-1m-btmF.csv
