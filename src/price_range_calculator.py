@@ -5,9 +5,12 @@ import argparse
 import sys
 
 
+import pandas as pd
+import numpy as np # Import numpy for NaN handling
+
 def calculate_max_range(df, time_window_hours):
     """
-    Calculate the maximum price range within a given time window using pandas optimized methods.
+    Calculate the maximum price range within a given time window using pandas optimized rolling methods.
     Excludes negative values when determining the lowest price.
 
     Args:
@@ -16,7 +19,7 @@ def calculate_max_range(df, time_window_hours):
         time_window_hours (int): The time window in hours.
 
     Returns:
-        dict: A dictionary containing max range information
+        dict: A dictionary containing max range information or None if no valid range found.
     """
     if df.empty:
         print("Error: DataFrame is empty")
@@ -29,72 +32,89 @@ def calculate_max_range(df, time_window_hours):
             print(f"Error: Required column '{col}' not found in data")
             return None
 
-    # Ensure DataFrame is sorted by time
-    df = df.sort_index()
+    # Ensure DataFrame is sorted by time (assuming index is datetime)
+    if not isinstance(df.index, pd.DatetimeIndex):
+        print(f"Error: DataFrame index must be a DatetimeIndex.")
+        return None
+    if not df.index.is_monotonic_increasing:
+        print("Warning: DataFrame index is not sorted. Sorting now...")
+        df = df.sort_index()
 
-    # Calculate time delta in the same units as the index
+    # Define the rolling window size as a time string
+    time_delta_str = f"{time_window_hours}H"
     time_delta = pd.Timedelta(hours=time_window_hours)
 
-    # Create new dataframe to store results
-    result_data = []
+    # --- Performance Improvement using rolling windows ---
 
-    # For each row, find all rows within the time window and calculate range
-    start_idx = 0
-    total_rows = len(df)
+    # Calculate rolling maximum of 'high'
+    rolling_high = df['high'].rolling(time_delta_str, closed='both').max()
 
-    while start_idx < total_rows:
-        start_time = df.index[start_idx]
-        end_time = start_time + time_delta
+    # Create a temporary series for 'low' where negative values are NaN
+    # This ensures they are ignored by .min()
+    positive_low = df['low'].where(df['low'] >= 0, np.nan)
 
-        # Efficiently slice the dataframe using .loc once per window
-        # This limits the amount of data we need to process
-        window = df.loc[start_time:end_time]
+    # Calculate rolling minimum of positive 'low' values
+    rolling_low = positive_low.rolling(time_delta_str, closed='both').min()
 
-        # Check that we have enough data and the window doesn't exceed our time limit
-        if len(window) > 1 and window.index[-1] - window.index[0] <= time_delta:
-            # Find highest price in this window
-            highest = window['high'].max()
+    # Calculate the price range for each window
+    rolling_range = rolling_high - rolling_low
 
-            # Find lowest price, excluding negative values
-            # First filter out negative values, then find the minimum
-            positive_lows = window.loc[window['low'] >= 0, 'low']
-
-            # Only proceed if we have positive values to work with
-            if not positive_lows.empty:
-                lowest = positive_lows.min()
-                price_range = highest - lowest
-
-                result_data.append({
-                    'start_time': window.index[0],
-                    'end_time': window.index[-1],
-                    'price_range': price_range,
-                    'high_price': highest,
-                    'low_price': lowest
-                })
-
-        # Move to next row - this makes the algorithm linear time
-        start_idx += 1
-
-        # Optional: print progress for large datasets
-        if start_idx % 10000 == 0:
-            print(f"Processed {start_idx}/{total_rows} rows...")
-
-    if not result_data:
-        print("No valid time windows found")
+    # Find the index (end time) of the window with the maximum range
+    if rolling_range.empty or rolling_range.isna().all():
+        print("No valid time windows found or range could not be calculated (e.g., only negative lows).")
         return None
 
-    # Convert results to DataFrame for efficient operations
-    results_df = pd.DataFrame(result_data)
+    max_range_end_time = rolling_range.idxmax()
 
-    # Find the row with maximum price range
-    max_range_row = results_df.loc[results_df['price_range'].idxmax()]
+    # Handle potential NaT result from idxmax if all ranges are NaN
+    if pd.isna(max_range_end_time):
+        print("Could not determine a valid maximum range window.")
+        return None
+
+    max_range_value = rolling_range.loc[max_range_end_time]
+
+    # Determine the start time of the best window
+    # Note: The rolling window includes the endpoint, so start time calculation needs care.
+    # We find the actual start by looking back from the end time.
+    max_range_start_time = max_range_end_time - time_delta
+
+    # Slice the original DataFrame for the specific window that yielded the max range
+    # Ensure start time is not before the first index entry
+    actual_start_time_in_df = df.index.searchsorted(max_range_start_time)
+    best_window_df = df.iloc[actual_start_time_in_df:df.index.get_loc(max_range_end_time) + 1]
+
+    # Refine window bounds based on actual data points within the theoretical window
+    # Use the index values from the sliced dataframe
+    actual_start_time = best_window_df.index.min()
+    actual_end_time = best_window_df.index.max() # This will be <= max_range_end_time
+
+
+    # Find the actual highest high and lowest positive low within THAT specific window
+    actual_high_price = best_window_df['high'].max()
+    positive_lows_in_window = best_window_df.loc[best_window_df['low'] >= 0, 'low']
+
+    if positive_lows_in_window.empty:
+        # This might happen in edge cases, though rolling_range should have been NaN.
+        print(f"Warning: The identified best window ending at {max_range_end_time} has no positive low values.")
+        # We might return None or the rolling value, depending on desired behavior.
+        # Let's return None for consistency, as a valid low wasn't found in the specific window.
+        return None
+        # Alternatively, could use rolling_low.loc[max_range_end_time] but less precise
+        # actual_low_price = rolling_low.loc[max_range_end_time]
+    else:
+        actual_low_price = positive_lows_in_window.min()
+
+    # Recalculate range based on actual values in the specific window
+    actual_max_range = actual_high_price - actual_low_price
+
+    # --- End of Performance Improvement ---
 
     return {
-        'max_range': float(max_range_row['price_range']),
-        'start_time': max_range_row['start_time'],
-        'end_time': max_range_row['end_time'],
-        'high_price': float(max_range_row['high_price']),
-        'low_price': float(max_range_row['low_price'])
+        'max_range': float(actual_max_range),
+        'start_time': actual_start_time, # Use the actual start time from the data in the window
+        'end_time': actual_end_time,     # Use the actual end time from the data in the window
+        'high_price': float(actual_high_price),
+        'low_price': float(actual_low_price)
     }
 
 
