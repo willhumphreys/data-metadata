@@ -11,7 +11,8 @@ def put_trade_job_on_queue(batch_params: BatchParameters, batch_client):
                                               containerOverrides={
                                                   "command": [
                                                       "-scenario", batch_params.full_scenario, "-output_dir", "results",
-                                                      "-write_trades", "-upload_to_s3", "-s3_key_min", batch_params.s3_key_min],
+                                                      "-write_trades", "-upload_to_s3", "-s3_key_min", batch_params.s3_key_min,
+                                                      "-back_test_id", batch_params.group_tag],
                                                   'environment': [
                                                       {'name': 'MOCHI_DATA_BUCKET',
                                                        'value': os.environ.get('MOCHI_DATA_BUCKET')},
@@ -33,7 +34,7 @@ def put_trade_job_on_queue(batch_params: BatchParameters, batch_client):
     agg_response = batch_client.submit_job(jobName=batch_params.aggregate_job_name, dependsOn=[{'jobId': trades_job_id}],
                                            jobQueue=batch_params.queue_name, jobDefinition="mochi-trades", containerOverrides={
             "command": ["-scenario", batch_params.full_scenario, "-output_dir", "results", "-upload_to_s3", "-aggregate",
-                        "-s3_key_min", batch_params.s3_key_min],
+                        "-s3_key_min", batch_params.s3_key_min, "-back_test_id", batch_params.group_tag],
             'environment': [{'name': 'MOCHI_DATA_BUCKET', 'value': os.environ.get('MOCHI_DATA_BUCKET')},
                             {'name': 'MOCHI_TRADES_BUCKET', 'value': os.environ.get('MOCHI_TRADES_BUCKET')},
                             {'name': 'MOCHI_TRADERS_BUCKET', 'value': os.environ.get('MOCHI_TRADERS_BUCKET')},
@@ -58,7 +59,7 @@ def put_trade_job_on_queue(batch_params: BatchParameters, batch_client):
         print(f"Submitting graph job with name: {job_name} with scenario: {scenario_value}")
         graph_response = batch_client.submit_job(jobName=job_name, dependsOn=[{'jobId': agg_job_id}],
                                                  jobQueue=batch_params.queue_name, jobDefinition="r-graphs",
-                                                 containerOverrides={"command": [scenario_value, script],
+                                                 containerOverrides={"command": [scenario_value, script, "-back_test_id", batch_params.group_tag],
                                                                      'environment': [
                                                                          {'name': 'MOCHI_AGGREGATION_BUCKET',
                                                                           'value': os.environ.get(
@@ -81,7 +82,7 @@ def put_trade_job_on_queue(batch_params: BatchParameters, batch_client):
     trade_extract_response = batch_client.submit_job(jobName=batch_params.trade_extract_job_name, jobQueue=batch_params.queue_name,
                                                      jobDefinition="trade-extract",
                                                      dependsOn=[{'jobId': best_traders_job_id}], containerOverrides={
-            "command": ["--symbol", symbol_with_provider, "--scenario", batch_params.scenario],
+            "command": ["--symbol", symbol_with_provider, "--scenario", batch_params.scenario, "--back_test_id", batch_params.group_tag],
             'environment': [{'name': 'MOCHI_GRAPHS_BUCKET', 'value': os.environ.get('MOCHI_GRAPHS_BUCKET')},
                             {'name': 'MOCHI_TRADES_BUCKET', 'value': os.environ.get('MOCHI_TRADES_BUCKET')},
                             {'name': 'MOCHI_PROD_TRADE_EXTRACTS', 'value': os.environ.get('MOCHI_PROD_TRADE_EXTRACTS')}
@@ -95,7 +96,7 @@ def put_trade_job_on_queue(batch_params: BatchParameters, batch_client):
     py_trade_lens_response = batch_client.submit_job(jobName=batch_params.py_trade_lens_job_name, jobQueue=batch_params.queue_name,
                                                      jobDefinition="py-trade-lens",
                                                      dependsOn=[{'jobId': trade_extract_job_id}], containerOverrides={
-            "command": ["--symbol", symbol_with_provider, "--scenario", batch_params.scenario],
+            "command": ["--symbol", symbol_with_provider, "--scenario", batch_params.scenario, "--back_test_id", batch_params.group_tag],
             'environment': [
                 {'name': 'MOCHI_DATA_BUCKET', 'value': os.environ.get('MOCHI_DATA_BUCKET')},
                 {'name': 'MOCHI_PROD_TRADE_EXTRACTS', 'value': os.environ.get('MOCHI_PROD_TRADE_EXTRACTS')},
@@ -112,7 +113,7 @@ def put_trade_job_on_queue(batch_params: BatchParameters, batch_client):
     trade_summary_response = batch_client.submit_job(jobName=batch_params.trade_summary_job_name, jobQueue=batch_params.queue_name,
                                                      jobDefinition="trade-summary",
                                                      dependsOn=[{'jobId': py_trade_lens_job_id}],
-                                                     containerOverrides={"command": ["--symbol", symbol_with_provider]},
+                                                     containerOverrides={"command": ["--symbol", symbol_with_provider, "--back_test_id", batch_params.group_tag]},
                                                      tags={"Symbol": batch_params.base_symbol, "SubmissionGroupTag": batch_params.group_tag,
                                                            "TaskType": "trade_summary"})
     print(f"Submitted trade-summary job with ID: {trade_summary_response['jobId']}")
