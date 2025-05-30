@@ -59,7 +59,7 @@ def put_trade_job_on_queue(batch_params: BatchParameters, batch_client):
         print(f"Submitting graph job with name: {job_name} with scenario: {scenario_value}")
         graph_response = batch_client.submit_job(jobName=job_name, dependsOn=[{'jobId': agg_job_id}],
                                                  jobQueue=batch_params.queue_name, jobDefinition="r-graphs",
-                                                 containerOverrides={"command": [scenario_value, script, "-back_test_id", batch_params.group_tag],
+                                                 containerOverrides={"command": [scenario_value, script, batch_params.group_tag],
                                                                      'environment': [
                                                                          {'name': 'MOCHI_AGGREGATION_BUCKET',
                                                                           'value': os.environ.get(

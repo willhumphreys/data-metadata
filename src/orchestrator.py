@@ -236,8 +236,8 @@ def format_scenario_string(s_min, s_max, s_step, l_min, l_max, l_step, o_min, o_
 
 
 def generate_and_submit_scenarios(time_to_place_range: int, time_to_hold_range: int,  # Keep this argument
-        ticker: str, s3_key_min: str, group_tag: str, time_to_hold_days: int, time_to_fill_hours: int
-        # No need for initial_stop_limit_step_size argument anymore
+        ticker: str, s3_key_min: str, group_tag: str, time_to_hold_days: int, time_to_fill_hours: int,
+        back_test_id: str = None  # Add back_test_id parameter with default None
 ) -> Dict[str, Any]:
     """
     Generates scenario strings based on calculated ranges and derived steps,
@@ -515,6 +515,8 @@ def generate_and_submit_scenarios(time_to_place_range: int, time_to_hold_range: 
     final_offset_step_size = max(1, current_stop_limit_step_size // 10)
     output_summary = {'ticker': ticker, 'group_tag': group_tag, 's3_key_min': s3_key_min,
         'time_to_hold_days': time_to_hold_days, 'time_to_fill_hours': time_to_fill_hours,
+        # Include back_test_id if provided
+        'back_test_id': back_test_id,
         # Report the dynamically calculated initial step size
         'initial_stop_limit_step_size_calculated': calculated_initial_stop_limit_step_size,
         'initial_step_size_hold_range_denominator': INITIAL_STEP_SIZE_HOLD_RANGE_DENOMINATOR,
@@ -541,13 +543,15 @@ def generate_and_submit_scenarios(time_to_place_range: int, time_to_hold_range: 
 
     return {'statusCode': 200, 'body': json.dumps({
         'message': f'Successfully generated and submitted {submitted_job_count // 2} scenario pairs ({submitted_job_count} jobs) for {ticker}. Initial Stop/Limit step: {calculated_initial_stop_limit_step_size}, Final Stop/Limit step: {current_stop_limit_step_size}, Final Offset step: {final_offset_step_size}',
-        'total_combinations_submitted': total_combinations_submitted, 'summary_file': summary_filename},
+        'total_combinations_submitted': total_combinations_submitted, 
+        'summary_file': summary_filename,
+        'back_test_id': back_test_id},  # Include back_test_id in the return value
         default=numpy_encoder)}
 
 
 # --- pipeline function ---
 def pipeline(ticker=None, output_dir=DEFAULT_OUTPUT_DIR, clean_output=True, group_tag=None, s3_key_min=None,
-             time_to_hold_days=DEFAULT_HOLD_DAYS, time_to_fill_hours=DEFAULT_FILL_HOURS):
+             time_to_hold_days=DEFAULT_HOLD_DAYS, time_to_fill_hours=DEFAULT_FILL_HOURS, back_test_id=None):
     """
     Main pipeline: Download data, calculate ranges, generate and submit scenarios.
     """
@@ -562,6 +566,10 @@ def pipeline(ticker=None, output_dir=DEFAULT_OUTPUT_DIR, clean_output=True, grou
     # Reference the denominator constant instead of the old hardcoded value
     print(f"Initial Stop/Limit Step Denominator: 1/{INITIAL_STEP_SIZE_HOLD_RANGE_DENOMINATOR} of hold range")
     print(f"Max Combinations/Job: {MAX_COMBINATIONS_PER_JOB}, Max Scenario Pairs: {MAX_SCENARIO_PAIRS}")
+
+    # Log back_test_id if provided
+    if back_test_id:
+        print(f"Back Test ID: {back_test_id}")
 
     if clean_output:
         print(f"Cleaning output directory: {output_dir}")
@@ -621,7 +629,7 @@ def pipeline(ticker=None, output_dir=DEFAULT_OUTPUT_DIR, clean_output=True, grou
     submission_results = generate_and_submit_scenarios(time_to_place_range=time_to_place_range,
         time_to_hold_range=time_to_hold_range,  # Pass calculated hold range
         ticker=ticker, s3_key_min=s3_key_min, group_tag=group_tag, time_to_hold_days=time_to_hold_days,
-        time_to_fill_hours=time_to_fill_hours)
+        time_to_fill_hours=time_to_fill_hours, back_test_id=back_test_id)
 
     print("\nPipeline finished.")
     return submission_results
@@ -648,6 +656,7 @@ def main():
     # Allow overriding the denominator via command line if desired
     parser.add_argument('--step-denom', type=int, default=initial_step_size_hold_range_denominator,
                         help=f'Denominator for calculating initial stop/limit step size from hold range (default: {initial_step_size_hold_range_denominator})')
+    parser.add_argument('--back_test_id', type=str, help='Identifier for the backtest')
 
     args = parser.parse_args()
 
@@ -665,10 +674,14 @@ def main():
         print(f"Error: Step denominator must be positive, got {initial_step_size_hold_range_denominator}")
         exit(1)
 
+    # Log the back_test_id if provided
+    if args.back_test_id:
+        print(f"Back Test ID: {args.back_test_id}")
+
     try:
         result = pipeline(ticker=args.ticker, output_dir=args.output_dir, clean_output=not args.no_clean,
             group_tag=args.group_tag, s3_key_min=args.s3_key_min, time_to_hold_days=args.hold_days,
-            time_to_fill_hours=args.fill_hours# Denominator is now handled via global or default
+            time_to_fill_hours=args.fill_hours, back_test_id=args.back_test_id  # Pass back_test_id to pipeline
         )
         print("\n--- Execution Summary ---")
         # Use default=numpy_encoder for potential numpy types in the result body
