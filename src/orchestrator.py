@@ -656,7 +656,7 @@ def main():
     # Allow overriding the denominator via command line if desired
     parser.add_argument('--step-denom', type=int, default=initial_step_size_hold_range_denominator,
                         help=f'Denominator for calculating initial stop/limit step size from hold range (default: {initial_step_size_hold_range_denominator})')
-    parser.add_argument('--back_test_id', type=str, help='Identifier for the backtest')
+    parser.add_argument('--back-test-id', type=str, help='Identifier for the backtest')
 
     args = parser.parse_args()
 
