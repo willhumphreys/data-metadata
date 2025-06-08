@@ -237,7 +237,8 @@ def format_scenario_string(s_min, s_max, s_step, l_min, l_max, l_step, o_min, o_
 
 def generate_and_submit_scenarios(time_to_place_range: int, time_to_hold_range: int,  # Keep this argument
         ticker: str, s3_key_min: str, group_tag: str, time_to_hold_days: int, time_to_fill_hours: int,
-        back_test_id: str = None  # Add back_test_id parameter with default None
+        back_test_id: str = None,  # Add back_test_id parameter with default None
+        trade_duration: int = 24, trade_timeout: int = 4  # Add trade_duration and trade_timeout parameters with default values
 ) -> Dict[str, Any]:
     """
     Generates scenario strings based on calculated ranges and derived steps,
@@ -295,12 +296,12 @@ def generate_and_submit_scenarios(time_to_place_range: int, time_to_hold_range: 
         limit_step = current_stop_limit_step_size  # Use current stop/limit step
 
         # Fixed duration and output ranges
-        duration_min = time_to_hold_days
-        duration_max = time_to_hold_days
+        duration_min = trade_duration
+        duration_max = trade_duration
         duration_step = DURATION_STEP  # Use constant
 
-        output_min = time_to_fill_hours
-        output_max = time_to_fill_hours
+        output_min = trade_timeout
+        output_max = trade_timeout
         output_step = OUTPUT_STEP  # Use constant
 
         # --- 2. Iteratively Split Scenarios (Inner Loop) ---
@@ -515,6 +516,7 @@ def generate_and_submit_scenarios(time_to_place_range: int, time_to_hold_range: 
     final_offset_step_size = max(1, current_stop_limit_step_size // 10)
     output_summary = {'ticker': ticker, 'group_tag': group_tag, 's3_key_min': s3_key_min,
         'time_to_hold_days': time_to_hold_days, 'time_to_fill_hours': time_to_fill_hours,
+        'trade_duration': trade_duration, 'trade_timeout': trade_timeout,
         # Include back_test_id if provided
         'back_test_id': back_test_id,
         # Report the dynamically calculated initial step size
@@ -551,7 +553,8 @@ def generate_and_submit_scenarios(time_to_place_range: int, time_to_hold_range: 
 
 # --- pipeline function ---
 def pipeline(ticker=None, output_dir=DEFAULT_OUTPUT_DIR, clean_output=True, group_tag=None, s3_key_min=None,
-             time_to_hold_days=DEFAULT_HOLD_DAYS, time_to_fill_hours=DEFAULT_FILL_HOURS, back_test_id=None):
+             time_to_hold_days=DEFAULT_HOLD_DAYS, time_to_fill_hours=DEFAULT_FILL_HOURS, back_test_id=None,
+             trade_duration=24, trade_timeout=4):
     """
     Main pipeline: Download data, calculate ranges, generate and submit scenarios.
     """
@@ -563,6 +566,7 @@ def pipeline(ticker=None, output_dir=DEFAULT_OUTPUT_DIR, clean_output=True, grou
 
     print(f"Starting pipeline for Ticker: {ticker}, Group: {group_tag}")
     print(f"Hold Time: {time_to_hold_days} days, Fill Time: {time_to_fill_hours} hours")
+    print(f"Trade Duration: {trade_duration} hours, Trade Timeout: {trade_timeout} hours")
     # Reference the denominator constant instead of the old hardcoded value
     print(f"Initial Stop/Limit Step Denominator: 1/{INITIAL_STEP_SIZE_HOLD_RANGE_DENOMINATOR} of hold range")
     print(f"Max Combinations/Job: {MAX_COMBINATIONS_PER_JOB}, Max Scenario Pairs: {MAX_SCENARIO_PAIRS}")
@@ -629,7 +633,8 @@ def pipeline(ticker=None, output_dir=DEFAULT_OUTPUT_DIR, clean_output=True, grou
     submission_results = generate_and_submit_scenarios(time_to_place_range=time_to_place_range,
         time_to_hold_range=time_to_hold_range,  # Pass calculated hold range
         ticker=ticker, s3_key_min=s3_key_min, group_tag=group_tag, time_to_hold_days=time_to_hold_days,
-        time_to_fill_hours=time_to_fill_hours, back_test_id=back_test_id)
+        time_to_fill_hours=time_to_fill_hours, back_test_id=back_test_id,
+        trade_duration=trade_duration, trade_timeout=trade_timeout)
 
     print("\nPipeline finished.")
     return submission_results
@@ -657,6 +662,10 @@ def main():
     parser.add_argument('--step-denom', type=int, default=initial_step_size_hold_range_denominator,
                         help=f'Denominator for calculating initial stop/limit step size from hold range (default: {initial_step_size_hold_range_denominator})')
     parser.add_argument('--back-test-id', type=str, help='Identifier for the backtest')
+    parser.add_argument('--trade-duration', type=int, default=24,
+                        help='Trade duration in hours (default: 24)')
+    parser.add_argument('--trade-timeout', type=int, default=4,
+                        help='Trade timeout in hours (default: 4)')
 
     args = parser.parse_args()
 
@@ -681,7 +690,8 @@ def main():
     try:
         result = pipeline(ticker=args.ticker, output_dir=args.output_dir, clean_output=not args.no_clean,
             group_tag=args.group_tag, s3_key_min=args.s3_key_min, time_to_hold_days=args.hold_days,
-            time_to_fill_hours=args.fill_hours, back_test_id=args.back_test_id  # Pass back_test_id to pipeline
+            time_to_fill_hours=args.fill_hours, back_test_id=args.back_test_id,  # Pass back_test_id to pipeline
+            trade_duration=args.trade_duration, trade_timeout=args.trade_timeout  # Pass trade_duration and trade_timeout to pipeline
         )
         print("\n--- Execution Summary ---")
         # Use default=numpy_encoder for potential numpy types in the result body
